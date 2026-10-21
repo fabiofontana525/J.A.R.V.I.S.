@@ -23,7 +23,6 @@ header b{color:var(--o);letter-spacing:.3em;font-family:Orbitron,sans-serif}
 .pg{display:none;max-width:1200px;margin:0 auto;padding:14px}
 .pg.on{display:block}
 
-/* Layout Anordnung */
 #home.on{display:flex;flex-direction:column;gap:14px}
 @media(min-width:900px){
   #home.on{display:grid;grid-template-columns:1fr 1.2fr 1fr;grid-template-areas:"monat jarvis woche";align-items:start}
@@ -44,6 +43,7 @@ canvas{width:min(78vw,280px);height:min(78vw,280px)}
 .m.me{color:var(--dim)}.m.me::before{content:"> "}.m.ai{border-color:var(--o)}.m a{color:var(--o)}
 form,.fr{display:flex;gap:8px;width:100%;margin-top:6px}
 input,select{font:inherit;background:#101a52;border:1px solid var(--line);color:var(--text);padding:8px 10px;min-width:0;flex:1;border-radius:0}
+input[type=color]{padding:2px;height:40px}
 .go{background:var(--o);color:#0d1650;border:0;padding:8px 12px;font:inherit;font-weight:700;cursor:pointer;flex:0 0 auto}
 .sec{background:none;border:1px solid var(--line);color:var(--text);padding:8px 12px;font:inherit;cursor:pointer}
 ul{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:5px}
@@ -58,7 +58,7 @@ li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding
 .grid2{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
 .big{font-size:clamp(34px,8vw,60px);color:var(--o);line-height:1;font-family:Orbitron,sans-serif;text-shadow:0 0 18px #ffffff88}
 .res{color:var(--o);font-size:20px;margin-top:8px;min-height:1.5em;overflow-wrap:anywhere}
-dialog{background:#141f5c;color:var(--text);border:1px solid var(--o);max-width:440px;width:92vw;padding:16px;font:inherit}
+dialog{background:#141f5c;color:var(--text);border:1px solid var(--o);max-width:440px;width:92vw;max-height:88vh;overflow-y:auto;padding:16px;font:inherit}
 dialog::backdrop{background:#000c}
 .row{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}.row label{color:var(--dim);font-size:14px}
 .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
@@ -80,7 +80,6 @@ dialog::backdrop{background:#000c}
 </header>
 
 <div class="pg on" id="home">
-  <!-- Haupt-Assistent -->
   <section class="card" id="sj">
     <div id="today-header">--:--</div>
     <canvas id="cv" width="600" height="600" aria-hidden="true"></canvas>
@@ -92,7 +91,6 @@ dialog::backdrop{background:#000c}
     </form>
   </section>
 
-  <!-- Monatsplan & Countdowns -->
   <section class="card" id="sl">
     <h2>Monatsplan & Countdowns</h2>
     <div id="cd-disp" style="font-size:16px;color:var(--o);font-weight:600;margin-bottom:10px">Kein Event aktiv</div>
@@ -103,15 +101,13 @@ dialog::backdrop{background:#000c}
     </form>
   </section>
 
-  <!-- Wochenplan (Nur Ansicht) -->
   <section class="card" id="sw">
     <h2>Wochenplan (Übersicht)</h2>
     <div class="wk" id="wk"></div>
-    <p class="hint">Einträge per Sprachbefehl hinzufügen. Tageseinträge löschen sich um Mitternacht.</p>
+    <p class="hint">Einträge per Sprachbefehl hinzufügen, z. B. „Füge Arzttermin am Mittwoch hinzu“. Tageseinträge löschen sich nach dem jeweiligen Tag.</p>
   </section>
 </div>
 
-<!-- Sonstige Seiten -->
 <div class="pg" id="tools"><div class="grid2">
 <section class="card"><h2>Rechner</h2><div class="fr"><input id="ce" type="text" inputmode="decimal" placeholder="z. B. 12,5*4+3"><button class="go" id="cb" type="button">=</button></div><div class="res" id="cr"></div></section>
 <section class="card"><h2>Prozent</h2><div class="fr"><input id="p1" type="number" step="any" placeholder="Prozent"><input id="p2" type="number" step="any" placeholder="Wert"></div><div class="res" id="pr"></div></section>
@@ -128,7 +124,7 @@ dialog::backdrop{background:#000c}
   <ul id="ul-hab"></ul>
   <form class="fr" id="habf">
     <input type="text" id="habi" placeholder="Bezeichnung (z.B. Fußball)">
-    <select id="habday" style="flex:0 0 130px">
+    <select id="habday" style="flex:0 0 130px" aria-label="Wochentag">
       <option value="">Jeden Tag</option>
       <option value="Montag">Montag</option>
       <option value="Dienstag">Dienstag</option>
@@ -140,6 +136,7 @@ dialog::backdrop{background:#000c}
     </select>
     <button class="go" type="submit">+</button>
   </form>
+  <p class="hint">Per Sprache: „Gewohnheit Laufen am Mittwoch“.</p>
 </section></div>
 
 <dialog id="dlg"><h2>Einstellungen</h2><div id="fields"></div><div class="btns"><button class="go" id="ok" type="button">Fertig</button></div></dialog>
@@ -148,10 +145,10 @@ dialog::backdrop{background:#000c}
 (function(){
 "use strict";
 var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"],DL=DAYS.map(function(d){return d.toLowerCase();});
-var DEF={wake:"jarvis",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ffffff",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],countdown:null,lastDay:""};
 
-try{var r0=localStorage.getItem("jarvis-v6");if(r0)S=JSON.parse(r0);}catch(e){}
+try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
 function fix(){
   S.notes=S.notes||[];S.habits=S.habits||[];
   if(!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
@@ -161,20 +158,19 @@ function fix(){
 fix();
 
 var $=function(i){return document.getElementById(i);};
-function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v6",JSON.stringify(S));}catch(e){}}
+function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v5",JSON.stringify(S));}catch(e){}}
 function mk(tag,txt,cls){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e;}
-function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);.trim();}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 
+/* Tageseinträge: nur der vergangene Tag wird geleert (bei mehreren verpassten Tagen alles) */
 function checkDailyReset(){
   var todayStr=new Date().toDateString();
-  if(S.lastDay && S.lastDay!==todayStr){
-    S.week=[[],[],[],[],[],[],[]];
-    S.lastDay=todayStr;
-    save();
-  } else if(!S.lastDay){
-    S.lastDay=todayStr;
-    save();
-  }
+  if(S.lastDay&&S.lastDay!==todayStr){
+    var last=new Date(S.lastDay),diff=Math.round((Date.now()-last.getTime())/86400000);
+    if(isNaN(last.getTime())||diff>1){S.week=[[],[],[],[],[],[],[]];}
+    else{S.week[(last.getDay()+6)%7]=[];}
+    S.lastDay=todayStr;save();
+  }else if(!S.lastDay){S.lastDay=todayStr;save();}
 }
 checkDailyReset();
 
@@ -189,12 +185,9 @@ function render(){
     var c=mk("details",null,"day"+(i===td?" today":""));c.open=(i===td);
     c.appendChild(mk("summary",d+(i===td?" (Heute)":"")));
     var ul=mk("ul");
-    
-    // Gewohnheiten OHNE "[Gewohnheit]"-Text anzeigen
     S.habits.forEach(function(h){
-      if(h.day===d||!h.day){ul.appendChild(mk("li",h.name));}
+      if(!h.day||h.day===d){ul.appendChild(mk("li",h.name));}
     });
-
     S.week[i].forEach(function(t){ul.appendChild(mk("li",t));});
     if(!ul.children.length)ul.appendChild(mk("li","Keine Einträge","empty"));
     c.appendChild(ul);w.appendChild(c);
@@ -205,10 +198,22 @@ function render(){
 var cdf=$("cdf");if(cdf){cdf.onsubmit=function(e){e.preventDefault();var name=$("cdname").value.trim(),time=$("cdtime").value;if(!name||!time)return;S.countdown={name:cap(name),target:new Date(time).getTime()};$("cdname").value="";$("cdtime").value="";save();render();};}
 function renderCd(){var el=$("cd-disp");if(!el)return;if(!S.countdown){el.textContent="Kein Event aktiv";return;}var diff=S.countdown.target-Date.now();if(diff<=0){el.textContent="Event: "+S.countdown.name+"!";return;}var d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000);el.textContent=S.countdown.name+": noch "+d+" Tage, "+h+" Std.";}
 
-function show(p){document.querySelectorAll(".pg").forEach(function(e){e.classList.toggle("on",e.id===p);});$("menu").classList.remove("open");}
-$("burger").onclick=function(){$("menu").classList.toggle("open");};
+var nf=$("notef");if(nf)nf.onsubmit=function(e){e.preventDefault();var v=$("notei").value.trim();if(!v)return;S.notes.push(cap(v));$("notei").value="";save();render();};
+
+function show(p){document.querySelectorAll(".pg").forEach(function(e){e.classList.toggle("on",e.id===p);});document.querySelectorAll("#menu button").forEach(function(b){b.classList.toggle("on",b.dataset.p===p);});$("menu").classList.remove("open");$("burger").setAttribute("aria-expanded","false");}
+$("burger").onclick=function(){var o=$("menu").classList.toggle("open");$("burger").setAttribute("aria-expanded",o?"true":"false");};
 document.querySelectorAll("#menu button").forEach(function(b){b.onclick=function(){show(b.dataset.p);};});
 
+/* Rechner, Prozent, Timer */
+var cb=$("cb");if(cb)cb.onclick=function(){var s=$("ce").value.replace(/,/g,".");if(!/^[0-9+\-*\/().\s%]+$/.test(s)){$("cr").textContent="Ungültige Eingabe";return;}try{var v=Function('"use strict";return ('+s+')')();$("cr").textContent=isFinite(v)?String(Math.round(v*1e8)/1e8).replace(".",","):"Fehler";}catch(e){$("cr").textContent="Fehler";}};
+function pc(){var p=parseFloat($("p1").value),v=parseFloat($("p2").value);$("pr").textContent=(isNaN(p)||isNaN(v))?"":(p+" % von "+v+" = "+(Math.round(p*v)/100).toString().replace(".",","));}
+if($("p1")){$("p1").oninput=pc;$("p2").oninput=pc;}
+var tInt=null,tEnd=0,tLab="";
+function tick(){var left=Math.max(0,tEnd-Date.now()),s=Math.round(left/1000);$("tdisp").textContent=("0"+Math.floor(s/60)).slice(-2)+":"+("0"+(s%60)).slice(-2);if(left<=0){clearInterval(tInt);tInt=null;say("Timer"+(tLab?" "+tLab:"")+" ist abgelaufen, "+S.cfg.name+".");}}
+if($("tgo"))$("tgo").onclick=function(){var m=parseFloat($("tmin").value);if(!(m>0))return;tLab=$("tlab").value.trim();tEnd=Date.now()+m*60000;clearInterval(tInt);tInt=setInterval(tick,500);tick();};
+if($("tstop"))$("tstop").onclick=function(){clearInterval(tInt);tInt=null;$("tdisp").textContent="00:00";};
+
+/* Partikel-Kugel */
 var cv=$("cv"),cx=cv.getContext("2d"),state="off",amp=0;
 function setState(s,t){state=s;if(t)$("status").textContent=t;}
 var PT=[];for(var pi=0;pi<1000;pi++)PT.push({th:Math.acos(2*Math.random()-1),ph:Math.random()*6.2832,r:.78+Math.random()*.3,sd:Math.random()*6.28,sz:.9+Math.random()*1.7});
@@ -223,7 +228,9 @@ requestAnimationFrame(draw);
 
 function log(txt,cls){var d=mk("div",txt,"m "+cls);var L=$("log");L.appendChild(d);L.scrollTop=L.scrollHeight;}
 
-var voice=null;function pv(){var v=speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);}),sv=S.cfg.voice;voice=v.find(function(x){return x.name===sv;})||v[0]||null;}
+/* Stimme */
+function germanVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);}):[];}
+var voice=null;function pv(){var v=germanVoices(),sv=S.cfg.voice;voice=v.find(function(x){return x.name===sv;})||v[0]||null;}
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=pv;}
 
 function say(txt){
@@ -234,16 +241,33 @@ function say(txt){
   u.lang="de-DE";if(voice)u.voice=voice;
   u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1.1;
   setState("speak");
-  u.onend=function(){setState("off","Tippen oder „Jarvis“ sagen");};
+  u.onend=function(){setState("off","Tippen oder „"+cap(S.cfg.wake)+"“ sagen");};
   u.onerror=function(){setState("off");};
   speechSynthesis.speak(u);
 }
 
+/* Spracherkennung mit Aktivierungswort + Codewörtern */
 var rec=null,active=false;
 function startRec(){if(!active||!rec)return;try{rec.start();}catch(e){}}
+function wakeWords(){
+  var l=[S.cfg.wake].concat(String(S.cfg.codes||"").split(","));
+  return l.map(function(x){return x.trim().toLowerCase();}).filter(Boolean);
+}
+function onSpeech(t){
+  var lc=t.toLowerCase(),ws=wakeWords();
+  if(!ws.length){handle(t);return;}
+  for(var i=0;i<ws.length;i++){
+    var idx=lc.indexOf(ws[i]);
+    if(idx!==-1){
+      var rest=t.slice(idx+ws[i].length).replace(/^[\s,.:!?]+/,"");
+      if(!rest){log(t,"me");say(S.cfg.reply);}else{handle(rest);}
+      return;
+    }
+  }
+}
 function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return false;
   rec=new SR();rec.lang="de-DE";rec.continuous=true;rec.interimResults=false;
-  rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;handle(t);};
+  rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;onSpeech(t);};
   rec.onstart=function(){setState("listen","Höre zu...");};rec.onend=function(){if(active)setTimeout(startRec,250);};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
@@ -253,60 +277,92 @@ setInterval(function(){
   var d=new Date();
   $("today-header").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});
   $("clock").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
-  checkDailyReset();
+  $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  checkDailyReset();renderCd();
 },1000);
 
+/* Web-Suche über Gemini */
 async function webAsk(q){var key="";try{key=localStorage.getItem("jarvis-gkey")||"";}catch(e){}if(!key)return null;
-  var r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(S.cfg.gmodel)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({contents:[{role:"user",parts:[{text:q}]}],tools:[{google_search:{}}]})});
-  if(!r.ok)return null;var j=await r.json(),c=j.candidates&&j.candidates[0];if(!c||!c.content)return null;
-  return (c.content.parts||[]).map(function(x){return x.text||"";}).join(" ").replace(/[*_#`]/g,"").trim();}
+  var prompt=q+(S.cfg.city?" (Standort des Nutzers: "+S.cfg.city+")":"");
+  try{
+    var r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(S.cfg.gmodel)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}]})});
+    if(!r.ok)return null;var j=await r.json(),c=j.candidates&&j.candidates[0];if(!c||!c.content)return null;
+    return (c.content.parts||[]).map(function(x){return x.text||"";}).join(" ").replace(/[*_#`]/g,"").trim();
+  }catch(e){return null;}
+}
 
 async function handle(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
   log(t,"me");
-  
+
+  /* Wochenplan-Eintrag */
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
     var dIdx=DL.indexOf(m[2]);S.week[dIdx].push(cap(m[1]));save();render();
-    var resp=cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".";
-    say(resp);
-    return;
+    return say(cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".");
   }
-  if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){
-    S.notes.push(cap(m[1]));save();render();
-    say("Notiz gespeichert, "+N+".");
-    return;
+  /* Gewohnheit mit Wochentag */
+  if((m=lc.match(/^gewohnheit\s+(.+?)(?:\s+(?:am|jeden)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag))?$/))){
+    var hd=m[2]?DAYS[DL.indexOf(m[2])]:"";
+    S.habits.push({name:cap(m[1]),day:hd});save();render();
+    return say(cap(m[1])+" als Gewohnheit "+(hd?"für "+hd:"für jeden Tag")+" gespeichert, "+N+".");
   }
-  
+  /* Notiz */
+  if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){S.notes.push(cap(m[1]));save();render();return say("Notiz gespeichert.");}
+
   setState("think","Sucht im Netz...");
   var res=await webAsk(t);
-  if(res) {
-    say(res);
-  } else {
-    var fb="Das konnte ich im Netz nicht finden, "+N+".";
-    say(fb);
-  }
+  if(res)say(res);
+  else say("Das konnte ich im Netz nicht finden, "+N+". Ist der Gemini-Schlüssel in den Einstellungen eingetragen?");
 }
 
 $("f").onsubmit=function(ev){ev.preventDefault();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
 
+/* Gewohnheiten */
 function renderHab(){var u=$("ul-hab");if(!u)return;u.innerHTML="";S.habits.forEach(function(h,i){
   var li=mk("li",h.name+(h.day?" ("+h.day+")":" (Jeden Tag)"));
   var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
 });}
 var habf=$("habf");if(habf)habf.onsubmit=function(e){e.preventDefault();var v=$("habi").value.trim(),d=$("habday").value;if(!v)return;S.habits.push({name:cap(v),day:d});$("habi").value="";save();render();};
 
-var FL=[["wake","Aktivierungswort","text"],["reply","Antwort auf Aktivierungswort","text"],["name","Anrede","text"],["rate","Sprechgeschwindigkeit (0,7 - 1,4)","number"],["color","Farbe","color"],["gkey","Google-Gemini-Schlüssel","password"],["gmodel","Gemini-Modell","text"],["city","Ort für Wetter","text"],["pitch","Stimmhöhe","number"]];
+/* Einstellungen: [Schlüssel, Beschriftung, Typ, min, max, Schritt] */
+var FL=[
+  ["wake","Aktivierungswort","text"],
+  ["codes","Codewörter (mit Komma trennen)","text"],
+  ["reply","Antwort auf Aktivierungswort","text"],
+  ["name","Anrede","text"],
+  ["rate","Sprechgeschwindigkeit (0,7 – 1,4)","number",0.7,1.4,0.1],
+  ["pitch","Stimmhöhe (0,5 – 2)","number",0.5,2,0.1],
+  ["voice","Stimme","voice"],
+  ["color","Farbe","color"],
+  ["gkey","Google-Gemini-Schlüssel","password"],
+  ["gmodel","Gemini-Modell","text"],
+  ["city","Ort für Wetter","text"]
+];
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
   FL.forEach(function(f){
-    var r=mk("div",null,"row"),l=mk("label",f[1]),i=mk("input");
-    i.id="c-"+f[0];i.type=f[2];
-    i.value=f[0]==="gkey"?(localStorage.getItem("jarvis-gkey")||""):S.cfg[f[0]];
-    if(f[2]==="number"){i.step="0.1";i.min="0.7";i.max="1.4";}
+    var r=mk("div",null,"row"),l=mk("label",f[1]),i;
+    if(f[2]==="voice"){
+      i=mk("select");
+      i.appendChild(Object.assign(mk("option","Automatisch (Deutsch)"),{value:""}));
+      germanVoices().forEach(function(v){i.appendChild(Object.assign(mk("option",v.name+" ("+v.lang+")"),{value:v.name}));});
+      i.value=S.cfg.voice||"";
+    }else{
+      i=mk("input");i.type=f[2];
+      if(f[0]==="gkey"){try{i.value=localStorage.getItem("jarvis-gkey")||"";}catch(e){}}
+      else i.value=S.cfg[f[0]]==null?"":S.cfg[f[0]];
+      if(f[2]==="number"){i.min=f[3];i.max=f[4];i.step=f[5];}
+      if(f[2]==="text"||f[2]==="password")i.autocomplete="off";
+    }
+    i.id="c-"+f[0];
     i.onchange=function(){
-      if(f[0]==="gkey"){localStorage.setItem("jarvis-gkey",i.value.trim());return;}
-      S.cfg[f[0]]=f[2]==="number"?parseFloat(i.value)||1:i.value.trim()||DEF[f[0]];
-      save();render();
+      if(f[0]==="gkey"){try{localStorage.setItem("jarvis-gkey",i.value.trim());}catch(e){}return;}
+      var val;
+      if(f[2]==="number"){val=parseFloat(String(i.value).replace(",","."));if(isNaN(val))val=DEF[f[0]];val=Math.min(f[4],Math.max(f[3],val));i.value=val;}
+      else if(f[0]==="codes"||f[0]==="city"||f[0]==="voice"){val=i.value.trim();}
+      else{val=i.value.trim()||DEF[f[0]];}
+      S.cfg[f[0]]=val;save();pv();render();
+      $("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
     };
     r.appendChild(l);r.appendChild(i);fl.appendChild(r);
   });
@@ -314,6 +370,7 @@ $("gear").onclick=function(){
 };
 $("ok").onclick=function(){$("dlg").close();};
 
+$("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
 render();
 })();
 </script>
