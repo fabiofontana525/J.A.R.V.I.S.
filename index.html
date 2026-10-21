@@ -145,7 +145,7 @@ dialog::backdrop{background:#000c}
 (function(){
 "use strict";
 var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"],DL=DAYS.map(function(d){return d.toLowerCase();});
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1,auto:true,autoh:8};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],countdown:null,lastDay:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
@@ -153,6 +153,7 @@ function fix(){
   S.notes=S.notes||[];S.habits=S.habits||[];
   if(!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
   S.cfg=Object.assign({},DEF,S.cfg||{});
+  S.lastBrief=S.lastBrief||"";
   if(!S.week||S.week.length!==7)S.week=[[],[],[],[],[],[],[]];
 }
 fix();
@@ -230,17 +231,21 @@ function log(txt,cls){var d=mk("div",txt,"m "+cls);var L=$("log");L.appendChild(
 
 /* Stimme */
 function germanVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);}):[];}
-var voice=null;function pv(){var v=germanVoices(),sv=S.cfg.voice;voice=v.find(function(x){return x.name===sv;})||v[0]||null;}
-if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=pv;}
+function allVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoices():[];}
+var voice=null,voiceFill=null;
+function pv(){var v=germanVoices(),sv=S.cfg.voice;voice=allVoices().find(function(x){return x.name===sv;})||v[0]||null;}
+if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=function(){pv();if(voiceFill&&$("dlg").open)voiceFill();};}
 
-function say(txt){
-  log(txt,"ai");
+var pendingSpeak=null;
+function say(txt,nolog){
+  if(!nolog)log(txt,"ai");
   if(!("speechSynthesis" in window))return;
   speechSynthesis.cancel();
   var u=new SpeechSynthesisUtterance(txt);
   u.lang="de-DE";if(voice)u.voice=voice;
   u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1.1;
   setState("speak");
+  u.onstart=function(){pendingSpeak=null;};
   u.onend=function(){setState("off","Tippen oder „"+cap(S.cfg.wake)+"“ sagen");};
   u.onerror=function(){setState("off");};
   speechSynthesis.speak(u);
@@ -271,14 +276,14 @@ function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecogniti
   rec.onstart=function(){setState("listen","Höre zu...");};rec.onend=function(){if(active)setTimeout(startRec,250);};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
-document.addEventListener("pointerdown",function(){activate();});
+document.addEventListener("pointerdown",function(){activate();if(pendingSpeak){var pt=pendingSpeak;pendingSpeak=null;say(pt,true);}});
 
 setInterval(function(){
   var d=new Date();
   $("today-header").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});
   $("clock").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
   $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  checkDailyReset();renderCd();
+  checkDailyReset();renderCd();autoBrief();
 },1000);
 
 /* Web-Suche über Gemini */
@@ -291,9 +296,41 @@ async function webAsk(q){var key="";try{key=localStorage.getItem("jarvis-gkey")|
   }catch(e){return null;}
 }
 
+/* Lagebericht = Woche + Listen | Update = Nachrichten des Tages */
+function weekText(){
+  var d=new Date(),td=(d.getDay()+6)%7,p=["Lagebericht für "+S.cfg.name+"."],any=false;
+  for(var i=td;i<7;i++){
+    var it=[];
+    S.habits.forEach(function(h){if(!h.day||h.day===DAYS[i])it.push(h.name);});
+    S.week[i].forEach(function(x){it.push(x);});
+    if(it.length){any=true;p.push((i===td?"Heute":DAYS[i])+": "+it.join(", ")+".");}
+  }
+  if(!any)p.push("Diese Woche steht nichts im Wochenplan.");
+  if(S.notes.length)p.push("In deinen Notizen steht: "+S.notes.slice(0,8).join(", ")+".");
+  if(S.countdown){var df=S.countdown.target-Date.now();
+    p.push(df<=0?"Das Event "+S.countdown.name+" ist jetzt.":S.countdown.name+" in "+Math.floor(df/86400000)+" Tagen und "+Math.floor((df%86400000)/3600000)+" Stunden.");}
+  return p.join(" ");
+}
+function report(){say(weekText());}
+async function dailyUpdate(){
+  setState("think","Hole Nachrichten...");
+  var d=new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  var n=await webAsk("Heute ist "+d+". Nenne die fünf wichtigsten Nachrichten von heute weltweit, je ein kurzer Satz, auf Deutsch, ohne Einleitung und ohne Aufzählungszeichen.");
+  say(n?"Tages-Update für "+S.cfg.name+". "+n:"Die Nachrichten konnte ich nicht abrufen, "+S.cfg.name+". Ist der Gemini-Schlüssel in den Einstellungen eingetragen?");
+}
+/* Automatischer Lagebericht: erstes Öffnen des Tages ab eingestellter Uhrzeit */
+function autoBrief(){
+  var d=new Date(),ts=d.toDateString();
+  if(!S.cfg.auto||S.lastBrief===ts||d.getHours()<S.cfg.autoh)return;
+  S.lastBrief=ts;save();
+  var t=weekText();pendingSpeak=t;say(t);
+}
+
 async function handle(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
   log(t,"me");
+  if(/update/.test(lc))return dailyUpdate();
+  if(/lagebericht/.test(lc))return report();
 
   /* Wochenplan-Eintrag */
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
@@ -332,11 +369,12 @@ var FL=[
   ["name","Anrede","text"],
   ["rate","Sprechgeschwindigkeit (0,7 – 1,4)","number",0.7,1.4,0.1],
   ["pitch","Stimmhöhe (0,5 – 2)","number",0.5,2,0.1],
-  ["voice","Stimme","voice"],
+  ["voice","Stimme (Auswahl hängt von deinem Gerät ab)","voice"],
   ["color","Farbe","color"],
   ["gkey","Google-Gemini-Schlüssel","password"],
   ["gmodel","Gemini-Modell","text"],
-  ["city","Ort für Wetter","text"]
+  ["city","Ort für Wetter","text"],
+  ["autoh","Automatischer Lagebericht ab (Uhr)","number",0,23,1]
 ];
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
@@ -344,9 +382,16 @@ $("gear").onclick=function(){
     var r=mk("div",null,"row"),l=mk("label",f[1]),i;
     if(f[2]==="voice"){
       i=mk("select");
-      i.appendChild(Object.assign(mk("option","Automatisch (Deutsch)"),{value:""}));
-      germanVoices().forEach(function(v){i.appendChild(Object.assign(mk("option",v.name+" ("+v.lang+")"),{value:v.name}));});
-      i.value=S.cfg.voice||"";
+      voiceFill=function(){
+        i.innerHTML="";
+        i.appendChild(Object.assign(mk("option","Automatisch (Deutsch)"),{value:""}));
+        var all=allVoices(),de=all.filter(function(v){return /^de/i.test(v.lang);}),other=all.filter(function(v){return !/^de/i.test(v.lang);});
+        function grp(label,list){if(!list.length)return;var g=document.createElement("optgroup");g.label=label;
+          list.forEach(function(v){g.appendChild(Object.assign(mk("option",v.name+" ("+v.lang+")"),{value:v.name}));});i.appendChild(g);}
+        grp("Deutsch",de);grp("Weitere Sprachen",other);
+        i.value=S.cfg.voice||"";
+      };
+      voiceFill();
     }else{
       i=mk("input");i.type=f[2];
       if(f[0]==="gkey"){try{i.value=localStorage.getItem("jarvis-gkey")||"";}catch(e){}}
@@ -362,16 +407,25 @@ $("gear").onclick=function(){
       else if(f[0]==="codes"||f[0]==="city"||f[0]==="voice"){val=i.value.trim();}
       else{val=i.value.trim()||DEF[f[0]];}
       S.cfg[f[0]]=val;save();pv();render();
+      if(f[0]==="voice")say("Hallo "+S.cfg.name+", so klinge ich.",true);
       $("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
     };
     r.appendChild(l);r.appendChild(i);fl.appendChild(r);
   });
+  var bh=mk("div",null,"row"),lb=mk("label",null),cb2=mk("input");
+  cb2.type="checkbox";cb2.checked=!!S.cfg.auto;
+  cb2.style.cssText="flex:0 0 auto;width:20px;height:20px;margin-right:8px";
+  lb.style.cssText="color:var(--text);font-size:16px;display:flex;align-items:center;padding:4px 0";
+  cb2.onchange=function(){S.cfg.auto=cb2.checked;save();};
+  lb.appendChild(cb2);lb.appendChild(document.createTextNode("Lagebericht beim ersten Öffnen am Tag"));
+  bh.appendChild(lb);fl.appendChild(bh);
   $("dlg").showModal();
 };
 $("ok").onclick=function(){$("dlg").close();};
 
 $("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
 render();
+autoBrief();
 })();
 </script>
 </body>
