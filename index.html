@@ -151,7 +151,7 @@ var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonnt
 var DEF={wake:"jarvis",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ffffff",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],countdown:null,lastDay:""};
 
-try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
+try{var r0=localStorage.getItem("jarvis-v6");if(r0)S=JSON.parse(r0);}catch(e){}
 function fix(){
   S.notes=S.notes||[];S.habits=S.habits||[];
   if(!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
@@ -161,9 +161,9 @@ function fix(){
 fix();
 
 var $=function(i){return document.getElementById(i);};
-function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v5",JSON.stringify(S));}catch(e){}}
+function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v6",JSON.stringify(S));}catch(e){}}
 function mk(tag,txt,cls){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e;}
-function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);.trim();}
 
 function checkDailyReset(){
   var todayStr=new Date().toDateString();
@@ -190,7 +190,7 @@ function render(){
     c.appendChild(mk("summary",d+(i===td?" (Heute)":"")));
     var ul=mk("ul");
     
-    // Gewohnheiten ohne das Wort Gewohnheit
+    // Gewohnheiten OHNE "[Gewohnheit]"-Text anzeigen
     S.habits.forEach(function(h){
       if(h.day===d||!h.day){ul.appendChild(mk("li",h.name));}
     });
@@ -267,14 +267,24 @@ async function handle(raw){
   
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
     var dIdx=DL.indexOf(m[2]);S.week[dIdx].push(cap(m[1]));save();render();
-    return say(cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".");
+    var resp=cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".";
+    say(resp);
+    return;
   }
-  if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){S.notes.push(cap(m[1]));save();render();return say("Notiz gespeichert.");}
+  if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){
+    S.notes.push(cap(m[1]));save();render();
+    say("Notiz gespeichert, "+N+".");
+    return;
+  }
   
   setState("think","Sucht im Netz...");
   var res=await webAsk(t);
-  if(res)say(res);
-  else say("Das konnte ich im Netz nicht finden, "+N+".");
+  if(res) {
+    say(res);
+  } else {
+    var fb="Das konnte ich im Netz nicht finden, "+N+".";
+    say(fb);
+  }
 }
 
 $("f").onsubmit=function(ev){ev.preventDefault();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
