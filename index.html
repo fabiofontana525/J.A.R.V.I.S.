@@ -48,7 +48,6 @@ input,select{font:inherit;background:#101a52;border:1px solid var(--line);color:
 .sec{background:none;border:1px solid var(--line);color:var(--text);padding:8px 12px;font:inherit;cursor:pointer}
 ul{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:5px}
 li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:5px 8px;border:1px solid var(--line);overflow-wrap:anywhere}
-li.done{text-decoration:line-through;color:var(--dim)}
 .x{background:none;border:0;color:var(--dim);cursor:pointer;font:inherit;font-size:18px;padding:0 4px}
 .empty{color:var(--dim)}
 .wk{display:flex;flex-direction:column;gap:6px}.day{min-width:0;padding:0;border:1px solid var(--line)}
@@ -77,7 +76,6 @@ dialog::backdrop{background:#000c}
     <button data-p="info">Übersicht</button>
     <button data-p="habits">Gewohnheiten</button>
     <button data-p="notes">Notizen</button>
-    <button data-act="ics">In Apple Kalender</button>
   </nav>
 </header>
 
@@ -94,7 +92,7 @@ dialog::backdrop{background:#000c}
     </form>
   </section>
 
-  <!-- Monatsplan & Countdowns (iPad Links / Handy Unten) -->
+  <!-- Monatsplan & Countdowns -->
   <section class="card" id="sl">
     <h2>Monatsplan & Countdowns</h2>
     <div id="cd-disp" style="font-size:16px;color:var(--o);font-weight:600;margin-bottom:10px">Kein Event aktiv</div>
@@ -105,11 +103,11 @@ dialog::backdrop{background:#000c}
     </form>
   </section>
 
-  <!-- Wochenplan (iPad Rechts / Handy Unten - Nur Ansicht) -->
+  <!-- Wochenplan (Nur Ansicht) -->
   <section class="card" id="sw">
     <h2>Wochenplan (Übersicht)</h2>
     <div class="wk" id="wk"></div>
-    <p class="hint">Einträge werden per Sprachbefehl an Jarvis hinzugefügt. Tageseinträge löschen sich um Mitternacht von selbst.</p>
+    <p class="hint">Einträge per Sprachbefehl hinzufügen. Tageseinträge löschen sich um Mitternacht.</p>
   </section>
 </div>
 
@@ -125,7 +123,24 @@ dialog::backdrop{background:#000c}
 
 <div class="pg" id="info"><div class="grid2"><section class="card"><h2>Zeit & Datum</h2><div class="big" id="clock">--:--</div><div id="dat"></div></section></div></div>
 
-<div class="pg" id="habits"><section class="card" style="max-width:520px;margin:auto"><h2>Feste Gewohnheiten / Training</h2><ul id="ul-hab"></ul><form class="fr" id="habf"><input type="text" id="habi" placeholder="Gewohnheit / Training eintragen"><button class="go" type="submit">+</button></form></section></div>
+<div class="pg" id="habits"><section class="card" style="max-width:520px;margin:auto">
+  <h2>Feste Gewohnheiten / Training</h2>
+  <ul id="ul-hab"></ul>
+  <form class="fr" id="habf">
+    <input type="text" id="habi" placeholder="Bezeichnung (z.B. Fußball)">
+    <select id="habday" style="flex:0 0 130px">
+      <option value="">Jeden Tag</option>
+      <option value="Montag">Montag</option>
+      <option value="Dienstag">Dienstag</option>
+      <option value="Mittwoch">Mittwoch</option>
+      <option value="Donnerstag">Donnerstag</option>
+      <option value="Freitag">Freitag</option>
+      <option value="Samstag">Samstag</option>
+      <option value="Sonntag">Sonntag</option>
+    </select>
+    <button class="go" type="submit">+</button>
+  </form>
+</section></div>
 
 <dialog id="dlg"><h2>Einstellungen</h2><div id="fields"></div><div class="btns"><button class="go" id="ok" type="button">Fertig</button></div></dialog>
 
@@ -133,28 +148,27 @@ dialog::backdrop{background:#000c}
 (function(){
 "use strict";
 var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"],DL=DAYS.map(function(d){return d.toLowerCase();});
-var DEF={wake:"jarvis",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ffffff",gmodel:"gemini-2.5-flash",voice:"",pitch:1.1};
+var DEF={wake:"jarvis",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ffffff",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],countdown:null,lastDay:""};
 
-try{var r0=localStorage.getItem("jarvis-v4");if(r0)S=JSON.parse(r0);}catch(e){}
+try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
 function fix(){
   S.notes=S.notes||[];S.habits=S.habits||[];
-  if(!S.habits.length){S.habits=[{name:"Fussball Training",days:{}},{name:"Fussball Match",days:{}}];}
+  if(!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
   S.cfg=Object.assign({},DEF,S.cfg||{});
   if(!S.week||S.week.length!==7)S.week=[[],[],[],[],[],[],[]];
 }
 fix();
 
 var $=function(i){return document.getElementById(i);};
-function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v4",JSON.stringify(S));}catch(e){}}
+function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v5",JSON.stringify(S));}catch(e){}}
 function mk(tag,txt,cls){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 
-// Tages-Reset für temporäre Einträge
 function checkDailyReset(){
   var todayStr=new Date().toDateString();
   if(S.lastDay && S.lastDay!==todayStr){
-    S.week=[[],[],[],[],[],[],[]]; // Löscht normale Tageseinträge über Nacht
+    S.week=[[],[],[],[],[],[],[]];
     S.lastDay=todayStr;
     save();
   } else if(!S.lastDay){
@@ -176,12 +190,11 @@ function render(){
     c.appendChild(mk("summary",d+(i===td?" (Heute)":"")));
     var ul=mk("ul");
     
-    // Gewohnheiten an den Wochentagen
+    // Gewohnheiten ohne das Wort Gewohnheit
     S.habits.forEach(function(h){
-      if(h.day===d||!h.day){var li=mk("li","[Gewohnheit] "+h.name);ul.appendChild(li);}
+      if(h.day===d||!h.day){ul.appendChild(mk("li",h.name));}
     });
 
-    // Sprach-/Manuelle Einträge
     S.week[i].forEach(function(t){ul.appendChild(mk("li",t));});
     if(!ul.children.length)ul.appendChild(mk("li","Keine Einträge","empty"));
     c.appendChild(ul);w.appendChild(c);
@@ -196,7 +209,6 @@ function show(p){document.querySelectorAll(".pg").forEach(function(e){e.classLis
 $("burger").onclick=function(){$("menu").classList.toggle("open");};
 document.querySelectorAll("#menu button").forEach(function(b){b.onclick=function(){show(b.dataset.p);};});
 
-// Jarvis Visualizer Ring
 var cv=$("cv"),cx=cv.getContext("2d"),state="off",amp=0;
 function setState(s,t){state=s;if(t)$("status").textContent=t;}
 var PT=[];for(var pi=0;pi<1000;pi++)PT.push({th:Math.acos(2*Math.random()-1),ph:Math.random()*6.2832,r:.78+Math.random()*.3,sd:Math.random()*6.28,sz:.9+Math.random()*1.7});
@@ -211,8 +223,7 @@ requestAnimationFrame(draw);
 
 function log(txt,cls){var d=mk("div",txt,"m "+cls);var L=$("log");L.appendChild(d);L.scrollTop=L.scrollHeight;}
 
-// Immer Laut Vorlesen Funktion
-var voice=null;function pv(){var v=speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);});voice=v.find(function(x){return x.name===S.cfg.voice;})||v[0]||null;}
+var voice=null;function pv(){var v=speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);}),sv=S.cfg.voice;voice=v.find(function(x){return x.name===sv;})||v[0]||null;}
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=pv;}
 
 function say(txt){
@@ -269,14 +280,26 @@ async function handle(raw){
 $("f").onsubmit=function(ev){ev.preventDefault();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
 
 function renderHab(){var u=$("ul-hab");if(!u)return;u.innerHTML="";S.habits.forEach(function(h,i){
-  var li=mk("li",h.name);var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
+  var li=mk("li",h.name+(h.day?" ("+h.day+")":" (Jeden Tag)"));
+  var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
 });}
-var habf=$("habf");if(habf)habf.onsubmit=function(e){e.preventDefault();var v=$("habi").value.trim();if(!v)return;S.habits.push({name:cap(v)});$("habi").value="";save();render();};
+var habf=$("habf");if(habf)habf.onsubmit=function(e){e.preventDefault();var v=$("habi").value.trim(),d=$("habday").value;if(!v)return;S.habits.push({name:cap(v),day:d});$("habi").value="";save();render();};
 
+var FL=[["wake","Aktivierungswort","text"],["reply","Antwort auf Aktivierungswort","text"],["name","Anrede","text"],["rate","Sprechgeschwindigkeit (0,7 - 1,4)","number"],["color","Farbe","color"],["gkey","Google-Gemini-Schlüssel","password"],["gmodel","Gemini-Modell","text"],["city","Ort für Wetter","text"],["pitch","Stimmhöhe","number"]];
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
-  var i=mk("input");i.value=localStorage.getItem("jarvis-gkey")||"";i.onchange=function(){localStorage.setItem("jarvis-gkey",i.value.trim());};
-  var r=mk("div",null,"row");r.appendChild(mk("label","Google Gemini Key:"));r.appendChild(i);fl.appendChild(r);
+  FL.forEach(function(f){
+    var r=mk("div",null,"row"),l=mk("label",f[1]),i=mk("input");
+    i.id="c-"+f[0];i.type=f[2];
+    i.value=f[0]==="gkey"?(localStorage.getItem("jarvis-gkey")||""):S.cfg[f[0]];
+    if(f[2]==="number"){i.step="0.1";i.min="0.7";i.max="1.4";}
+    i.onchange=function(){
+      if(f[0]==="gkey"){localStorage.setItem("jarvis-gkey",i.value.trim());return;}
+      S.cfg[f[0]]=f[2]==="number"?parseFloat(i.value)||1:i.value.trim()||DEF[f[0]];
+      save();render();
+    };
+    r.appendChild(l);r.appendChild(i);fl.appendChild(r);
+  });
   $("dlg").showModal();
 };
 $("ok").onclick=function(){$("dlg").close();};
