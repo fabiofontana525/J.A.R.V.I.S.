@@ -23,10 +23,12 @@ header b{color:var(--o);letter-spacing:.3em;font-family:Orbitron,sans-serif}
 .pg{display:none;max-width:1200px;margin:0 auto;padding:14px}
 .pg.on{display:block}
 
+/* Layout Start: Wochenplan + To-Do | Jarvis | Monatsplan */
 #home.on{display:flex;flex-direction:column;gap:14px}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
 @media(min-width:900px){
-  #home.on{display:grid;grid-template-columns:1fr 1.2fr 1fr;grid-template-areas:"monat jarvis woche";align-items:start}
-  #sj{grid-area:jarvis} #sl{grid-area:monat} #sw{grid-area:woche}
+  #home.on{display:grid;grid-template-columns:1fr 1.2fr 1fr;grid-template-areas:"woche jarvis monat";align-items:start}
+  #sj{grid-area:jarvis} #colw{grid-area:woche} #sl{grid-area:monat}
 }
 
 .card{background:#182469e6;border:1px solid var(--line);padding:14px;position:relative;min-width:0;clip-path:polygon(0 12px,12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%)}
@@ -42,12 +44,18 @@ canvas{width:min(78vw,280px);height:min(78vw,280px)}
 .m{padding:6px 10px;border-left:2px solid var(--line);overflow-wrap:anywhere}
 .m.me{color:var(--dim)}.m.me::before{content:"> "}.m.ai{border-color:var(--o)}.m a{color:var(--o)}
 form,.fr{display:flex;gap:8px;width:100%;margin-top:6px}
+.fr.wrap{flex-wrap:wrap}
 input,select{font:inherit;background:#101a52;border:1px solid var(--line);color:var(--text);padding:8px 10px;min-width:0;flex:1;border-radius:0}
 input[type=color]{padding:2px;height:40px}
 .go{background:var(--o);color:#0d1650;border:0;padding:8px 12px;font:inherit;font-weight:700;cursor:pointer;flex:0 0 auto}
 .sec{background:none;border:1px solid var(--line);color:var(--text);padding:8px 12px;font:inherit;cursor:pointer}
 ul{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:5px}
 li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:5px 8px;border:1px solid var(--line);overflow-wrap:anywhere}
+li.ed{flex-wrap:wrap}
+li .tx{flex:1;min-width:0}
+li.dn .tx{text-decoration:line-through;color:var(--dim)}
+li input[type=checkbox]{flex:0 0 auto;width:20px;height:20px;padding:0;accent-color:var(--o)}
+li[draggable=true]{cursor:grab}
 .x{background:none;border:0;color:var(--dim);cursor:pointer;font:inherit;font-size:18px;padding:0 4px}
 .empty{color:var(--dim)}
 .wk{display:flex;flex-direction:column;gap:6px}.day{min-width:0;padding:0;border:1px solid var(--line)}
@@ -58,6 +66,7 @@ li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding
 .grid2{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
 .big{font-size:clamp(34px,8vw,60px);color:var(--o);line-height:1;font-family:Orbitron,sans-serif;text-shadow:0 0 18px #ffffff88}
 .res{color:var(--o);font-size:20px;margin-top:8px;min-height:1.5em;overflow-wrap:anywhere}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.4em}
 dialog{background:#141f5c;color:var(--text);border:1px solid var(--o);max-width:440px;width:92vw;max-height:88vh;overflow-y:auto;padding:16px;font:inherit}
 dialog::backdrop{background:#000c}
 .row{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}.row label{color:var(--dim);font-size:14px}
@@ -83,7 +92,7 @@ dialog::backdrop{background:#000c}
   <section class="card" id="sj">
     <div id="today-header">--:--</div>
     <canvas id="cv" width="600" height="600" aria-hidden="true"></canvas>
-    <div id="status">Tippen oder „Jarvis“ sagen</div>
+    <div id="status"></div>
     <div id="log" aria-live="polite"></div>
     <form id="f">
       <input type="text" id="inp" placeholder="Befehl eingeben …" autocomplete="off" aria-label="Befehl eingeben">
@@ -91,20 +100,37 @@ dialog::backdrop{background:#000c}
     </form>
   </section>
 
+  <div class="col" id="colw">
+    <section class="card" id="sw">
+      <h2>Wochenplan</h2>
+      <div class="wk" id="wk"></div>
+      <form class="fr" id="wkf">
+        <input type="text" id="wki" placeholder="Neuer Eintrag …" aria-label="Neuer Eintrag">
+        <select id="wkd" style="flex:0 0 110px" aria-label="Tag"></select>
+        <button class="go" type="submit">+</button>
+      </form>
+      <p class="hint">Haken = erledigt · ⇄ = auf anderen Tag verschieben (am PC auch per Ziehen).</p>
+    </section>
+    <section class="card" id="td">
+      <h2>To-Do-Liste</h2>
+      <ul id="ul-td"></ul>
+      <form class="fr" id="tdf">
+        <input type="text" id="tdi" placeholder="Neue Aufgabe …" aria-label="Neue Aufgabe">
+        <button class="go" type="submit">+</button>
+      </form>
+      <div class="fr"><button class="sec" id="tdclr" type="button">Erledigte entfernen</button></div>
+    </section>
+  </div>
+
   <section class="card" id="sl">
     <h2>Monatsplan & Countdowns</h2>
-    <div id="cd-disp" style="font-size:16px;color:var(--o);font-weight:600;margin-bottom:10px">Kein Event aktiv</div>
-    <form class="fr" id="cdf">
-      <input type="text" id="cdname" placeholder="Event Name" aria-label="Event-Name">
-      <input type="datetime-local" id="cdtime" aria-label="Zielzeit" style="flex:0 0 140px">
+    <ul id="ul-ev"></ul>
+    <form class="fr wrap" id="cdf">
+      <input type="text" id="cdname" placeholder="Termin / Event" aria-label="Name" style="flex:1 1 120px">
+      <input type="datetime-local" id="cdtime" aria-label="Zeitpunkt" style="flex:1 1 150px">
       <button class="go" type="submit">+</button>
     </form>
-  </section>
-
-  <section class="card" id="sw">
-    <h2>Wochenplan (Übersicht)</h2>
-    <div class="wk" id="wk"></div>
-    <p class="hint">Einträge per Sprachbefehl hinzufügen, z. B. „Füge Arzttermin am Mittwoch hinzu“. Tageseinträge löschen sich nach dem jeweiligen Tag.</p>
+    <p class="hint">✎ = Eintrag nachträglich bearbeiten.</p>
   </section>
 </div>
 
@@ -117,7 +143,11 @@ dialog::backdrop{background:#000c}
 
 <div class="pg" id="notes"><section class="card" style="max-width:600px;margin:auto"><h2>Notizen & Gedanken</h2><ul id="ul-notes"></ul><form class="fr" id="notef"><input type="text" id="notei" placeholder="Neue Notiz..."><button class="go" type="submit">+</button></form></section></div>
 
-<div class="pg" id="info"><div class="grid2"><section class="card"><h2>Zeit & Datum</h2><div class="big" id="clock">--:--</div><div id="dat"></div></section></div></div>
+<div class="pg" id="info"><div class="grid2">
+  <section class="card"><h2>Zeit & Datum</h2><div class="big" id="clock">--:--</div><div id="dat"></div></section>
+  <section class="card"><h2>Lagebericht (heute)</h2><div class="txt" id="lb-text"></div><div class="fr"><button class="go" id="lb-say" type="button">Vorlesen</button></div></section>
+  <section class="card"><h2>Update des Tages</h2><div class="txt" id="upd-text">Noch nicht geladen.</div><div class="fr"><button class="go" id="upd-go" type="button">Aktualisieren</button><button class="sec" id="upd-say" type="button">Vorlesen</button></div></section>
+</div></div>
 
 <div class="pg" id="habits"><section class="card" style="max-width:520px;margin:auto">
   <h2>Feste Gewohnheiten / Training</h2>
@@ -145,16 +175,22 @@ dialog::backdrop{background:#000c}
 (function(){
 "use strict";
 var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"],DL=DAYS.map(function(d){return d.toLowerCase();});
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1.1,auto:true,autoh:8};
-var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],countdown:null,lastDay:""};
+var GBASE="https://generativelanguage.googleapis.com/v1beta/models/";
+var ACT={say:"Text sagen",lagebericht:"Lagebericht",update:"Update (Nachrichten)",ask:"Frage an Gemini",page:"Seite öffnen",timer:"Timer (Minuten)"};
+var PAGES={home:"Start",tools:"Rechner",timer:"Timer",info:"Übersicht",habits:"Gewohnheiten",notes:"Notizen"};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1,auto:true,autoh:8,engine:"device",gvoice:"Kore",gtts:"gemini-2.5-flash-preview-tts",cmds:[]};
+var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],todos:[],events:[],hdone:{},countdown:null,lastDay:"",lastBrief:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
 function fix(){
-  S.notes=S.notes||[];S.habits=S.habits||[];
-  if(!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
+  S.notes=S.notes||[];S.habits=S.habits||[];S.todos=S.todos||[];S.events=S.events||[];S.hdone=S.hdone||{};
+  if(!S.ts&&!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
   S.cfg=Object.assign({},DEF,S.cfg||{});
-  S.lastBrief=S.lastBrief||"";
+  S.cfg.cmds=Array.isArray(S.cfg.cmds)?S.cfg.cmds:[];
   if(!S.week||S.week.length!==7)S.week=[[],[],[],[],[],[],[]];
+  S.week=S.week.map(function(d){return (d||[]).map(function(x){return typeof x==="string"?{t:x,done:false}:x;});});
+  if(S.countdown){S.events.push({name:S.countdown.name,target:S.countdown.target});S.countdown=null;}
+  S.lastBrief=S.lastBrief||"";
 }
 fix();
 
@@ -162,59 +198,152 @@ var $=function(i){return document.getElementById(i);};
 function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v5",JSON.stringify(S));}catch(e){}}
 function mk(tag,txt,cls){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function gkey(){try{return localStorage.getItem("jarvis-gkey")||"";}catch(e){return "";}}
+function idleText(){return "Tippen oder „"+cap(S.cfg.wake)+"“ sagen";}
+function wk0(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d.toDateString();}
+function fdt(ts){return new Date(ts).toLocaleString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
+function left(ts){var df=ts-Date.now();if(df<=0)return "vorbei";var d=Math.floor(df/864e5),h=Math.floor(df%864e5/36e5),m=Math.floor(df%36e5/6e4);return "noch "+(d?d+" Tg ":"")+h+" Std"+(d?"":" "+m+" Min");}
+function lcl(ts){return new Date(ts-new Date(ts).getTimezoneOffset()*6e4).toISOString().slice(0,16);}
 
-/* Tageseinträge: nur der vergangene Tag wird geleert (bei mehreren verpassten Tagen alles) */
+/* Tageswechsel: vergangener Tag wird geleert, alte Wochen-Haken werden entfernt */
 function checkDailyReset(){
   var todayStr=new Date().toDateString();
   if(S.lastDay&&S.lastDay!==todayStr){
-    var last=new Date(S.lastDay),diff=Math.round((Date.now()-last.getTime())/86400000);
+    var last=new Date(S.lastDay),diff=Math.round((Date.now()-last.getTime())/864e5);
     if(isNaN(last.getTime())||diff>1){S.week=[[],[],[],[],[],[],[]];}
     else{S.week[(last.getDay()+6)%7]=[];}
+    var k0=wk0();Object.keys(S.hdone).forEach(function(k){if(k.indexOf(k0+"|")!==0)delete S.hdone[k];});
     S.lastDay=todayStr;save();
   }else if(!S.lastDay){S.lastDay=todayStr;save();}
 }
 checkDailyReset();
 
-function render(){
-  document.documentElement.style.setProperty("--o",S.cfg.color);
-  var un=$("ul-notes");if(un){un.innerHTML="";S.notes.forEach(function(n,i){
-    var li=mk("li",n);var x=mk("button","×","x");x.onclick=function(){S.notes.splice(i,1);save();render();};li.appendChild(x);un.appendChild(li);
-  });}
+/* ---------- Listen-Darstellung ---------- */
+var openD={},editEv=-1;
+openD[(new Date().getDay()+6)%7]=true;
 
-  var w=$("wk");w.innerHTML="";var td=(new Date().getDay()+6)%7;
+function row(t,done,cb){
+  var li=mk("li",null,done?"dn":""),c=mk("input");c.type="checkbox";c.checked=done;
+  c.onchange=function(){cb(c.checked);};
+  li.appendChild(c);li.appendChild(mk("span",t,"tx"));return li;
+}
+function moveEntry(from,j,to){
+  if(from===to)return;var e=S.week[from].splice(j,1)[0];
+  if(e){S.week[to].push(e);openD[to]=true;}save();render();
+}
+function renderWeek(){
+  var w=$("wk");w.innerHTML="";var td=(new Date().getDay()+6)%7,k0=wk0();
   DAYS.forEach(function(d,i){
-    var c=mk("details",null,"day"+(i===td?" today":""));c.open=(i===td);
+    var c=mk("details",null,"day"+(i===td?" today":""));c.open=!!openD[i];
+    c.ontoggle=function(){openD[i]=c.open;};
+    c.ondragover=function(e){e.preventDefault();};
+    c.ondrop=function(e){e.preventDefault();var p=(e.dataTransfer.getData("text/plain")||"").split("|");if(p.length===2)moveEntry(+p[0],+p[1],i);};
     c.appendChild(mk("summary",d+(i===td?" (Heute)":"")));
     var ul=mk("ul");
     S.habits.forEach(function(h){
-      if(!h.day||h.day===d){ul.appendChild(mk("li",h.name));}
+      if(h.day&&h.day!==d)return;
+      var key=k0+"|"+i+"|"+h.name;
+      ul.appendChild(row(h.name,!!S.hdone[key],function(v){if(v)S.hdone[key]=true;else delete S.hdone[key];save();render();}));
     });
-    S.week[i].forEach(function(t){ul.appendChild(mk("li",t));});
+    S.week[i].forEach(function(e,j){
+      var li=row(e.t,e.done,function(v){e.done=v;save();render();});
+      li.draggable=true;
+      li.ondragstart=function(ev){ev.dataTransfer.setData("text/plain",i+"|"+j);};
+      var mv=mk("button","⇄","x");mv.title="Auf anderen Tag verschieben";
+      mv.onclick=function(){
+        var sel=mk("select");sel.style.flex="0 0 125px";
+        sel.appendChild(Object.assign(mk("option","Verschieben nach …"),{value:""}));
+        DAYS.forEach(function(dd,k){if(k!==i)sel.appendChild(Object.assign(mk("option",dd),{value:String(k)}));});
+        sel.onchange=function(){if(sel.value!=="")moveEntry(i,j,+sel.value);};
+        sel.onblur=function(){render();};
+        li.replaceChild(sel,mv);sel.focus();
+      };
+      var x=mk("button","×","x");x.onclick=function(){S.week[i].splice(j,1);save();render();};
+      li.appendChild(mv);li.appendChild(x);ul.appendChild(li);
+    });
     if(!ul.children.length)ul.appendChild(mk("li","Keine Einträge","empty"));
     c.appendChild(ul);w.appendChild(c);
   });
-  renderHab();renderCd();
+}
+function renderTodos(){
+  var u=$("ul-td");u.innerHTML="";
+  S.todos.forEach(function(t,i){
+    var li=row(t.t,t.done,function(v){t.done=v;save();render();});
+    var x=mk("button","×","x");x.onclick=function(){S.todos.splice(i,1);save();render();};
+    li.appendChild(x);u.appendChild(li);
+  });
+  if(!S.todos.length)u.appendChild(mk("li","Keine Aufgaben","empty"));
+}
+function renderEv(){
+  var u=$("ul-ev");u.innerHTML="";
+  S.events.sort(function(a,b){return a.target-b.target;});
+  S.events.forEach(function(e,i){
+    var li;
+    if(i===editEv){
+      li=mk("li",null,"ed");
+      var n=mk("input");n.value=e.name;n.style.flex="1 1 120px";
+      var t=mk("input");t.type="datetime-local";t.value=lcl(e.target);t.style.flex="1 1 150px";
+      var ok=mk("button","✓","go"),no=mk("button","✕","sec");
+      ok.onclick=function(){var nv=n.value.trim(),tv=t.value;if(!nv||!tv)return;e.name=cap(nv);e.target=new Date(tv).getTime();editEv=-1;save();render();};
+      no.onclick=function(){editEv=-1;render();};
+      li.appendChild(n);li.appendChild(t);li.appendChild(ok);li.appendChild(no);
+    }else{
+      li=mk("li");
+      li.appendChild(mk("span",e.name+" – "+fdt(e.target)+" · "+left(e.target),"tx"));
+      var ed=mk("button","✎","x");ed.title="Bearbeiten";ed.onclick=function(){editEv=i;render();};
+      var x=mk("button","×","x");x.onclick=function(){S.events.splice(i,1);save();render();};
+      li.appendChild(ed);li.appendChild(x);
+    }
+    u.appendChild(li);
+  });
+  if(!S.events.length)u.appendChild(mk("li","Keine Termine","empty"));
+}
+function renderHab(){var u=$("ul-hab");if(!u)return;u.innerHTML="";S.habits.forEach(function(h,i){
+  var li=mk("li",h.name+(h.day?" ("+h.day+")":" (Jeden Tag)"));
+  var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
+});}
+function renderNotes(){
+  var un=$("ul-notes");if(!un)return;un.innerHTML="";
+  S.notes.forEach(function(n,i){var li=mk("li",n);var x=mk("button","×","x");x.onclick=function(){S.notes.splice(i,1);save();render();};li.appendChild(x);un.appendChild(li);});
+}
+function render(){
+  document.documentElement.style.setProperty("--o",S.cfg.color);
+  renderWeek();renderTodos();renderEv();renderHab();renderNotes();$("lb-text").textContent=reportText();
 }
 
-var cdf=$("cdf");if(cdf){cdf.onsubmit=function(e){e.preventDefault();var name=$("cdname").value.trim(),time=$("cdtime").value;if(!name||!time)return;S.countdown={name:cap(name),target:new Date(time).getTime()};$("cdname").value="";$("cdtime").value="";save();render();};}
-function renderCd(){var el=$("cd-disp");if(!el)return;if(!S.countdown){el.textContent="Kein Event aktiv";return;}var diff=S.countdown.target-Date.now();if(diff<=0){el.textContent="Event: "+S.countdown.name+"!";return;}var d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000);el.textContent=S.countdown.name+": noch "+d+" Tage, "+h+" Std.";}
+/* ---------- Formulare ---------- */
+(function(){
+  var sel=$("wkd"),td=(new Date().getDay()+6)%7;
+  DAYS.forEach(function(d,i){sel.appendChild(Object.assign(mk("option",d),{value:String(i)}));});sel.value=String(td);
+  $("wkf").onsubmit=function(e){e.preventDefault();var v=$("wki").value.trim();if(!v)return;var i=+sel.value;S.week[i].push({t:cap(v),done:false});openD[i]=true;$("wki").value="";save();render();};
+  $("tdf").onsubmit=function(e){e.preventDefault();var v=$("tdi").value.trim();if(!v)return;S.todos.push({t:cap(v),done:false});$("tdi").value="";save();render();};
+  $("tdclr").onclick=function(){S.todos=S.todos.filter(function(t){return !t.done;});save();render();};
+  $("cdf").onsubmit=function(e){e.preventDefault();var name=$("cdname").value.trim(),time=$("cdtime").value;if(!name||!time)return;S.events.push({name:cap(name),target:new Date(time).getTime()});$("cdname").value="";$("cdtime").value="";save();render();};
+  $("notef").onsubmit=function(e){e.preventDefault();var v=$("notei").value.trim();if(!v)return;S.notes.push(cap(v));$("notei").value="";save();render();};
+  $("habf").onsubmit=function(e){e.preventDefault();var v=$("habi").value.trim(),d=$("habday").value;if(!v)return;S.habits.push({name:cap(v),day:d});$("habi").value="";save();render();};
+})();
 
-var nf=$("notef");if(nf)nf.onsubmit=function(e){e.preventDefault();var v=$("notei").value.trim();if(!v)return;S.notes.push(cap(v));$("notei").value="";save();render();};
-
-function show(p){document.querySelectorAll(".pg").forEach(function(e){e.classList.toggle("on",e.id===p);});document.querySelectorAll("#menu button").forEach(function(b){b.classList.toggle("on",b.dataset.p===p);});$("menu").classList.remove("open");$("burger").setAttribute("aria-expanded","false");}
+/* ---------- Navigation ---------- */
+function show(p){
+  document.querySelectorAll(".pg").forEach(function(e){e.classList.toggle("on",e.id===p);});
+  document.querySelectorAll("#menu button").forEach(function(b){b.classList.toggle("on",b.dataset.p===p);});
+  $("menu").classList.remove("open");$("burger").setAttribute("aria-expanded","false");
+  if(p==="info")$("lb-text").textContent=reportText();
+}
 $("burger").onclick=function(){var o=$("menu").classList.toggle("open");$("burger").setAttribute("aria-expanded",o?"true":"false");};
 document.querySelectorAll("#menu button").forEach(function(b){b.onclick=function(){show(b.dataset.p);};});
 
-/* Rechner, Prozent, Timer */
-var cb=$("cb");if(cb)cb.onclick=function(){var s=$("ce").value.replace(/,/g,".");if(!/^[0-9+\-*\/().\s%]+$/.test(s)){$("cr").textContent="Ungültige Eingabe";return;}try{var v=Function('"use strict";return ('+s+')')();$("cr").textContent=isFinite(v)?String(Math.round(v*1e8)/1e8).replace(".",","):"Fehler";}catch(e){$("cr").textContent="Fehler";}};
+/* ---------- Rechner, Prozent, Timer ---------- */
+$("cb").onclick=function(){var s=$("ce").value.replace(/,/g,".");if(!/^[0-9+\-*\/().\s%]+$/.test(s)){$("cr").textContent="Ungültige Eingabe";return;}try{var v=Function('"use strict";return ('+s+')')();$("cr").textContent=isFinite(v)?String(Math.round(v*1e8)/1e8).replace(".",","):"Fehler";}catch(e){$("cr").textContent="Fehler";}};
 function pc(){var p=parseFloat($("p1").value),v=parseFloat($("p2").value);$("pr").textContent=(isNaN(p)||isNaN(v))?"":(p+" % von "+v+" = "+(Math.round(p*v)/100).toString().replace(".",","));}
-if($("p1")){$("p1").oninput=pc;$("p2").oninput=pc;}
+$("p1").oninput=pc;$("p2").oninput=pc;
 var tInt=null,tEnd=0,tLab="";
-function tick(){var left=Math.max(0,tEnd-Date.now()),s=Math.round(left/1000);$("tdisp").textContent=("0"+Math.floor(s/60)).slice(-2)+":"+("0"+(s%60)).slice(-2);if(left<=0){clearInterval(tInt);tInt=null;say("Timer"+(tLab?" "+tLab:"")+" ist abgelaufen, "+S.cfg.name+".");}}
-if($("tgo"))$("tgo").onclick=function(){var m=parseFloat($("tmin").value);if(!(m>0))return;tLab=$("tlab").value.trim();tEnd=Date.now()+m*60000;clearInterval(tInt);tInt=setInterval(tick,500);tick();};
-if($("tstop"))$("tstop").onclick=function(){clearInterval(tInt);tInt=null;$("tdisp").textContent="00:00";};
+function tick(){var l=Math.max(0,tEnd-Date.now()),s=Math.round(l/1000);$("tdisp").textContent=("0"+Math.floor(s/60)).slice(-2)+":"+("0"+(s%60)).slice(-2);if(l<=0){clearInterval(tInt);tInt=null;say("Timer"+(tLab?" "+tLab:"")+" ist abgelaufen, "+S.cfg.name+".");}}
+function startTimer(m,lab){if(!(m>0))return false;tLab=lab||"";tEnd=Date.now()+m*60000;clearInterval(tInt);tInt=setInterval(tick,500);tick();return true;}
+$("tgo").onclick=function(){startTimer(parseFloat($("tmin").value),$("tlab").value.trim());};
+$("tstop").onclick=function(){clearInterval(tInt);tInt=null;$("tdisp").textContent="00:00";};
 
-/* Partikel-Kugel */
+/* ---------- Partikel-Kugel ---------- */
 var cv=$("cv"),cx=cv.getContext("2d"),state="off",amp=0;
 function setState(s,t){state=s;if(t)$("status").textContent=t;}
 var PT=[];for(var pi=0;pi<1000;pi++)PT.push({th:Math.acos(2*Math.random()-1),ph:Math.random()*6.2832,r:.78+Math.random()*.3,sd:Math.random()*6.28,sz:.9+Math.random()*1.7});
@@ -227,39 +356,87 @@ function draw(ts){var t=ts/1000,tg=state==="speak"?1:state==="think"?.6:state===
   cx.globalAlpha=1;requestAnimationFrame(draw);}
 requestAnimationFrame(draw);
 
-function log(txt,cls){var d=mk("div",txt,"m "+cls);var L=$("log");L.appendChild(d);L.scrollTop=L.scrollHeight;}
+function log(txt,cls){var d=mk("div",txt,"m "+cls);var L=$("log");L.appendChild(d);L.scrollTop=L.scrollHeight;return d;}
 
-/* Stimme */
+/* ---------- Sprachausgabe: Warteschlange, Satz für Satz, Geräte- oder Gemini-Stimme ---------- */
 function germanVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoices().filter(function(x){return /^de/i.test(x.lang);}):[];}
 function allVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoices():[];}
-var voice=null,voiceFill=null;
-function pv(){var v=germanVoices(),sv=S.cfg.voice;voice=allVoices().find(function(x){return x.name===sv;})||v[0]||null;}
+/* beste deutsche Stimme automatisch wählen (Premium/Enhanced/Neural/Google bevorzugt) */
+function bestVoice(){
+  var v=germanVoices();if(!v.length)return null;
+  function sc(x){var n=x.name,s=0;if(/premium|enhanced|erweitert/i.test(n))s+=5;if(/neural|natural|online/i.test(n))s+=4;if(/google/i.test(n))s+=3;if(/anna|helena|markus|katja|conrad|amala/i.test(n))s+=2;if(!x.localService)s+=1;return s;}
+  return v.slice().sort(function(a,b){return sc(b)-sc(a);})[0];
+}
+var voice=null,voiceFill=null,pendingSpeak=null;
+function pv(){var sv=S.cfg.voice;voice=allVoices().find(function(x){return x.name===sv;})||bestVoice();}
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=function(){pv();if(voiceFill&&$("dlg").open)voiceFill();};}
 
-var pendingSpeak=null;
-function say(txt,nolog){
-  if(!nolog)log(txt,"ai");
-  if(!("speechSynthesis" in window))return;
-  speechSynthesis.cancel();
-  var u=new SpeechSynthesisUtterance(txt);
-  u.lang="de-DE";if(voice)u.voice=voice;
-  u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1.1;
-  setState("speak");
-  u.onstart=function(){pendingSpeak=null;};
-  u.onend=function(){setState("off","Tippen oder „"+cap(S.cfg.wake)+"“ sagen");};
-  u.onerror=function(){setState("off");};
-  speechSynthesis.speak(u);
+var spk={q:[],busy:false,gen:0,src:null,streamOpen:false},ac=null;
+function geminiOn(){return S.cfg.engine==="gemini"&&!!gkey();}
+function ensureAC(){try{if(!ac){var C=window.AudioContext||window.webkitAudioContext;if(C)ac=new C();}if(ac&&ac.state==="suspended")ac.resume();}catch(e){}}
+function stopSpeak(){spk.gen++;spk.q=[];spk.busy=false;spk.streamOpen=false;try{if("speechSynthesis" in window)speechSynthesis.cancel();}catch(e){}if(spk.src){try{spk.src.stop();}catch(e){}spk.src=null;}}
+function cleanTxt(t){return t.replace(/https?:\/\/\S+/g,"").replace(/\[\d+(?:,\s*\d+)*\]/g,"").replace(/[*_#`>~]/g," ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,"").replace(/[ \t]+/g," ").trim();}
+function splitS(t){
+  var th=geminiOn()?220:25,a=t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g)||[t],o=[],cur="";
+  a.forEach(function(s){cur+=s;if(cur.trim().length>=th){o.push(cur.trim());cur="";}});
+  if(cur.trim())o.push(cur.trim());return o;
 }
+function takeSentence(b){var re=/[.!?]\s/g,m,min=geminiOn()?90:20;while((m=re.exec(b))){if(m.index>=min)return m.index+1;}return -1;}
+function b64f32(d){var bin=atob(d),n=bin.length>>1,f=new Float32Array(n);for(var i=0;i<n;i++){var v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v&32768)v-=65536;f[i]=v/32768;}return f;}
+async function geminiAudio(t){
+  try{
+    var r=await fetch(GBASE+encodeURIComponent(S.cfg.gtts)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":gkey()},body:JSON.stringify({contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}})});
+    if(!r.ok)return null;var j=await r.json();
+    return b64f32(j.candidates[0].content.parts[0].inlineData.data);
+  }catch(e){return null;}
+}
+function playBuf(f){return new Promise(function(res){
+  if(!ac||ac.state!=="running"){res(false);return;}
+  try{var b=ac.createBuffer(1,f.length,24000);b.copyToChannel(f,0);var s=ac.createBufferSource();s.buffer=b;s.connect(ac.destination);s.onended=function(){res(true);};spk.src=s;s.start();}catch(e){res(false);}
+});}
+function devSpeak(t){return new Promise(function(res){
+  if(!("speechSynthesis" in window)){res();return;}
+  var done=false,tm=null;
+  function fin(){if(!done){done=true;clearTimeout(tm);res();}}
+  var u=new SpeechSynthesisUtterance(t);
+  u.lang=voice?voice.lang:"de-DE";if(voice)u.voice=voice;
+  u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1;
+  u.onstart=function(){pendingSpeak=null;};u.onend=fin;u.onerror=fin;
+  tm=setTimeout(fin,Math.max(5000,t.length*110));
+  speechSynthesis.speak(u);
+});}
+function enqueue(t,dev){
+  t=cleanTxt(t);if(!t)return;
+  splitS(t).forEach(function(p){var it={t:p};if(!dev&&geminiOn())it.p=geminiAudio(p);spk.q.push(it);});
+  pump();
+}
+async function pump(){
+  if(spk.busy)return;
+  var it=spk.q.shift();
+  if(!it){if(!spk.streamOpen)setState("off",idleText());return;}
+  spk.busy=true;var g=spk.gen;setState("speak");
+  try{
+    var ok=false;
+    if(it.p){var buf=await it.p;if(g!==spk.gen)return;if(buf)ok=await playBuf(buf);}
+    if(g!==spk.gen)return;
+    if(!ok)await devSpeak(it.t);
+  }catch(e){}
+  if(g!==spk.gen)return;
+  spk.busy=false;pump();
+}
+function say(txt,o){o=o||{};if(!o.nolog)log(txt,"ai");stopSpeak();enqueue(txt,o.dev);}
+$("cv").onclick=function(){stopSpeak();setState("off",idleText());};
 
-/* Spracherkennung mit Aktivierungswort + Codewörtern */
+/* ---------- Spracherkennung ---------- */
 var rec=null,active=false;
 function startRec(){if(!active||!rec)return;try{rec.start();}catch(e){}}
-function wakeWords(){
-  var l=[S.cfg.wake].concat(String(S.cfg.codes||"").split(","));
-  return l.map(function(x){return x.trim().toLowerCase();}).filter(Boolean);
-}
+function wakeWords(){return [S.cfg.wake].concat(String(S.cfg.codes||"").split(",")).map(function(x){return x.trim().toLowerCase();}).filter(Boolean);}
+function trigWords(){return S.cfg.cmds.map(function(c){return c.w;}).concat(["lagebericht","update"]);}
 function onSpeech(t){
-  var lc=t.toLowerCase(),ws=wakeWords();
+  if(spk.busy||spk.q.length)return; /* nicht auf die eigene Stimme hören */
+  var lc=t.toLowerCase();
+  if(trigWords().some(function(w){return w&&lc.indexOf(w)!==-1;})){handle(t);return;}
+  var ws=wakeWords();
   if(!ws.length){handle(t);return;}
   for(var i=0;i<ws.length;i++){
     var idx=lc.indexOf(ws[i]);
@@ -273,109 +450,195 @@ function onSpeech(t){
 function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return false;
   rec=new SR();rec.lang="de-DE";rec.continuous=true;rec.interimResults=false;
   rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;onSpeech(t);};
-  rec.onstart=function(){setState("listen","Höre zu...");};rec.onend=function(){if(active)setTimeout(startRec,250);};
+  rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active)setTimeout(startRec,250);};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
-document.addEventListener("pointerdown",function(){activate();if(pendingSpeak){var pt=pendingSpeak;pendingSpeak=null;say(pt,true);}});
+document.addEventListener("pointerdown",function(){
+  ensureAC();activate();
+  if(pendingSpeak){var pt=pendingSpeak;pendingSpeak=null;say(pt,{nolog:true});}
+});
 
-setInterval(function(){
-  var d=new Date();
-  $("today-header").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});
-  $("clock").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
-  $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  checkDailyReset();renderCd();autoBrief();
-},1000);
-
-/* Web-Suche über Gemini */
-async function webAsk(q){var key="";try{key=localStorage.getItem("jarvis-gkey")||"";}catch(e){}if(!key)return null;
-  var prompt=q+(S.cfg.city?" (Standort des Nutzers: "+S.cfg.city+")":"");
+/* ---------- Gemini: gestreamte Antwort, wird schon beim Eintreffen gesprochen ---------- */
+function takeSentenceLoop(buf,speak){var k;while((k=takeSentence(buf))>0){speak(buf.slice(0,k));buf=buf.slice(k).replace(/^\s+/,"");}return buf;}
+async function ask(q,o){
+  o=o||{};var key=gkey();if(!key)return null;
+  var model=S.cfg.gmodel;
+  var body={
+    systemInstruction:{parts:[{text:"Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"")}]},
+    contents:[{role:"user",parts:[{text:q}]}],
+    tools:[{google_search:{}}],
+    generationConfig:{maxOutputTokens:400,temperature:.4}
+  };
+  if(/2\.5-flash/.test(model))body.generationConfig.thinkingConfig={thinkingBudget:0};
+  var div=o.log?log("","ai"):null,acc="",buf="",ok=false;
+  if(o.speak){stopSpeak();spk.streamOpen=true;}
   try{
-    var r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(S.cfg.gmodel)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}]})});
-    if(!r.ok)return null;var j=await r.json(),c=j.candidates&&j.candidates[0];if(!c||!c.content)return null;
-    return (c.content.parts||[]).map(function(x){return x.text||"";}).join(" ").replace(/[*_#`]/g,"").trim();
-  }catch(e){return null;}
+    var r=await fetch(GBASE+encodeURIComponent(model)+":streamGenerateContent?alt=sse",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify(body)});
+    if(!r.ok||!r.body)throw new Error("http");
+    var rd=r.body.getReader(),dec=new TextDecoder(),sb="";
+    for(;;){
+      var c=await rd.read();if(c.done)break;
+      sb+=dec.decode(c.value,{stream:true});
+      var ls=sb.split("\n");sb=ls.pop();
+      for(var li=0;li<ls.length;li++){
+        var l=ls[li];if(l.indexOf("data:")!==0)continue;
+        try{
+          var j=JSON.parse(l.slice(5)),cd=j.candidates&&j.candidates[0],ps=(cd&&cd.content&&cd.content.parts)||[];
+          var t=ps.map(function(x){return x.text||"";}).join("");if(!t)continue;
+          ok=true;acc+=t;buf+=t;
+          var shown=cleanTxt(acc);if(div)div.textContent=shown;if(o.onText)o.onText(shown);
+          if(o.speak)buf=takeSentenceLoop(buf,function(s){enqueue(s);});
+        }catch(e){}
+      }
+    }
+  }catch(e){}
+  if(o.speak){if(buf.trim())enqueue(buf);spk.streamOpen=false;pump();}
+  if(!ok){if(div)div.remove();return null;}
+  return cleanTxt(acc);
 }
 
-/* Lagebericht = Woche + Listen | Update = Nachrichten des Tages */
-function weekText(){
-  var d=new Date(),td=(d.getDay()+6)%7,p=["Lagebericht für "+S.cfg.name+"."],any=false;
-  for(var i=td;i<7;i++){
-    var it=[];
-    S.habits.forEach(function(h){if(!h.day||h.day===DAYS[i])it.push(h.name);});
-    S.week[i].forEach(function(x){it.push(x);});
-    if(it.length){any=true;p.push((i===td?"Heute":DAYS[i])+": "+it.join(", ")+".");}
-  }
-  if(!any)p.push("Diese Woche steht nichts im Wochenplan.");
-  if(S.notes.length)p.push("In deinen Notizen steht: "+S.notes.slice(0,8).join(", ")+".");
-  if(S.countdown){var df=S.countdown.target-Date.now();
-    p.push(df<=0?"Das Event "+S.countdown.name+" ist jetzt.":S.countdown.name+" in "+Math.floor(df/86400000)+" Tagen und "+Math.floor((df%86400000)/3600000)+" Stunden.");}
-  return p.join(" ");
+/* ---------- Lagebericht (heute) & Update (Nachrichten) ---------- */
+function reportText(){
+  var d=new Date(),td=(d.getDay()+6)%7,k0=wk0(),todo=[],dn=0,p=[];
+  S.habits.forEach(function(h){if(h.day&&h.day!==DAYS[td])return;if(S.hdone[k0+"|"+td+"|"+h.name])dn++;else todo.push(h.name);});
+  S.week[td].forEach(function(e){if(e.done)dn++;else todo.push(e.t);});
+  p.push(todo.length?"Heute steht an: "+todo.join(", ")+(dn?" ("+dn+" schon erledigt)":"")+".":(dn?"Heute ist im Wochenplan alles erledigt.":"Heute steht nichts im Wochenplan."));
+  var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});
+  p.push(ot.length?"Offene To-Dos: "+ot.join(", ")+".":"Keine offenen To-Dos.");
+  var a=new Date(d);a.setHours(0,0,0,0);var s0=a.getTime(),s1=s0+864e5;
+  var today=S.events.filter(function(e){return e.target>=s0&&e.target<s1;}).map(function(e){return e.name+" um "+new Date(e.target).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr";});
+  if(today.length)p.push("Termine heute: "+today.join(", ")+".");
+  var nx=S.events.filter(function(e){return e.target>=s1;}).sort(function(x,y){return x.target-y.target;})[0];
+  if(nx)p.push("Als Nächstes: "+nx.name+", "+left(nx.target)+".");
+  if(S.notes.length)p.push("Notizen: "+S.notes.slice(0,3).join(", ")+".");
+  return p.join("\n");
 }
-function report(){say(weekText());}
-async function dailyUpdate(){
-  setState("think","Hole Nachrichten...");
+function doReport(){var t=reportText();$("lb-text").textContent=t;say("Lagebericht für "+S.cfg.name+". "+t.replace(/\n/g," "));}
+
+var updCache={t:"",ts:0};
+async function runUpdate(o){
+  o=o||{};var tgt=$("upd-text");
+  if(!o.force&&updCache.t&&Date.now()-updCache.ts<6e5){tgt.textContent=updCache.t;if(o.speak)say(updCache.t,{nolog:!o.log});return true;}
+  if(!gkey()){tgt.textContent="Bitte zuerst den Gemini-Schlüssel in den Einstellungen eintragen.";if(o.speak)say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein.");return false;}
+  tgt.textContent="Lade Nachrichten …";setState("think","Hole Nachrichten...");
   var d=new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  var n=await webAsk("Heute ist "+d+". Nenne die fünf wichtigsten Nachrichten von heute weltweit, je ein kurzer Satz, auf Deutsch, ohne Einleitung und ohne Aufzählungszeichen.");
-  say(n?"Tages-Update für "+S.cfg.name+". "+n:"Die Nachrichten konnte ich nicht abrufen, "+S.cfg.name+". Ist der Gemini-Schlüssel in den Einstellungen eingetragen?");
+  var txt=await ask("Heute ist "+d+". Nenne die 2 bis 3 wichtigsten aktuellen Nachrichten des Tages weltweit, je ein prägnanter Satz. Keine Einleitung, keine Aufzählungszeichen.",{speak:!!o.speak,log:!!o.log,onText:function(t){tgt.textContent=t;}});
+  if(txt){updCache={t:txt,ts:Date.now()};return true;}
+  tgt.textContent="Nachrichten konnten nicht geladen werden.";setState("off",idleText());
+  if(o.speak)say("Die Nachrichten konnte ich gerade nicht abrufen, "+S.cfg.name+".");
+  return false;
 }
+$("lb-say").onclick=function(){doReport();};
+$("upd-go").onclick=function(){runUpdate({force:true});};
+$("upd-say").onclick=function(){if(updCache.t)say(updCache.t,{nolog:true});else runUpdate({speak:true});};
+
 /* Automatischer Lagebericht: erstes Öffnen des Tages ab eingestellter Uhrzeit */
 function autoBrief(){
   var d=new Date(),ts=d.toDateString();
   if(!S.cfg.auto||S.lastBrief===ts||d.getHours()<S.cfg.autoh)return;
   S.lastBrief=ts;save();
-  var t=weekText();pendingSpeak=t;say(t);
+  var t="Guten Morgen, "+S.cfg.name+". Lagebericht. "+reportText().replace(/\n/g," ");
+  log(t,"ai");pendingSpeak=t;stopSpeak();enqueue(t,true);
 }
 
+/* ---------- Befehle ---------- */
+function runCmd(c){
+  switch(c.a){
+    case "say":return say(c.p||"Ja?");
+    case "lagebericht":return doReport();
+    case "update":return runUpdate({speak:true,log:true});
+    case "ask":return askChat(c.p);
+    case "page":show(c.p);return say("Öffne "+(PAGES[c.p]||c.p)+".");
+    case "timer":var m=parseFloat(String(c.p).replace(",","."));if(startTimer(m,c.w)){show("timer");return say("Timer für "+m+" Minuten läuft.");}return say("Die Minuten fehlen.");
+  }
+}
+async function askChat(q){
+  if(!gkey())return say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein, "+S.cfg.name+".");
+  setState("think","Sucht im Netz...");
+  var res=await ask(q,{speak:true,log:true});
+  if(!res){setState("off",idleText());say("Das konnte ich im Netz nicht finden, "+S.cfg.name+".");}
+}
 async function handle(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
   log(t,"me");
-  if(/update/.test(lc))return dailyUpdate();
-  if(/lagebericht/.test(lc))return report();
+  for(var ci=0;ci<S.cfg.cmds.length;ci++){var c=S.cfg.cmds[ci];if(c.w&&lc.indexOf(c.w)!==-1)return runCmd(c);}
+  if(/update/.test(lc))return runUpdate({speak:true,log:true});
+  if(/lagebericht/.test(lc))return doReport();
+  if(/wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
+  if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
-  /* Wochenplan-Eintrag */
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
-    var dIdx=DL.indexOf(m[2]);S.week[dIdx].push(cap(m[1]));save();render();
+    var dIdx=DL.indexOf(m[2]);S.week[dIdx].push({t:cap(m[1]),done:false});openD[dIdx]=true;save();render();
     return say(cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".");
   }
-  /* Gewohnheit mit Wochentag */
+  if((m=lc.match(/^(?:to-?do|aufgabe)\s*[:]?\s*(.+)$/))){S.todos.push({t:cap(m[1]),done:false});save();render();return say("Aufgabe gespeichert.");}
   if((m=lc.match(/^gewohnheit\s+(.+?)(?:\s+(?:am|jeden)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag))?$/))){
     var hd=m[2]?DAYS[DL.indexOf(m[2])]:"";
     S.habits.push({name:cap(m[1]),day:hd});save();render();
     return say(cap(m[1])+" als Gewohnheit "+(hd?"für "+hd:"für jeden Tag")+" gespeichert, "+N+".");
   }
-  /* Notiz */
   if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){S.notes.push(cap(m[1]));save();render();return say("Notiz gespeichert.");}
-
-  setState("think","Sucht im Netz...");
-  var res=await webAsk(t);
-  if(res)say(res);
-  else say("Das konnte ich im Netz nicht finden, "+N+". Ist der Gemini-Schlüssel in den Einstellungen eingetragen?");
+  return askChat(t);
 }
+$("f").onsubmit=function(ev){ev.preventDefault();ensureAC();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
 
-$("f").onsubmit=function(ev){ev.preventDefault();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
-
-/* Gewohnheiten */
-function renderHab(){var u=$("ul-hab");if(!u)return;u.innerHTML="";S.habits.forEach(function(h,i){
-  var li=mk("li",h.name+(h.day?" ("+h.day+")":" (Jeden Tag)"));
-  var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
-});}
-var habf=$("habf");if(habf)habf.onsubmit=function(e){e.preventDefault();var v=$("habi").value.trim(),d=$("habday").value;if(!v)return;S.habits.push({name:cap(v),day:d});$("habi").value="";save();render();};
-
-/* Einstellungen: [Schlüssel, Beschriftung, Typ, min, max, Schritt] */
+/* ---------- Einstellungen ---------- */
+var GV=["Kore","Puck","Charon","Fenrir","Aoede","Zephyr","Leda","Orus","Callirrhoe","Sulafat"].map(function(n){return [n,n];});
 var FL=[
   ["wake","Aktivierungswort","text"],
-  ["codes","Codewörter (mit Komma trennen)","text"],
+  ["codes","Weitere Aktivierungswörter (mit Komma trennen)","text"],
   ["reply","Antwort auf Aktivierungswort","text"],
   ["name","Anrede","text"],
+  ["engine","Stimm-Engine","select",[["device","Gerät (schnell)"],["gemini","Gemini (natürlicher, braucht Schlüssel)"]]],
+  ["gvoice","Gemini-Stimme","select",GV],
+  ["voice","Gerätestimme (Auswahl hängt vom Gerät ab)","voice"],
   ["rate","Sprechgeschwindigkeit (0,7 – 1,4)","number",0.7,1.4,0.1],
   ["pitch","Stimmhöhe (0,5 – 2)","number",0.5,2,0.1],
-  ["voice","Stimme (Auswahl hängt von deinem Gerät ab)","voice"],
   ["color","Farbe","color"],
   ["gkey","Google-Gemini-Schlüssel","password"],
   ["gmodel","Gemini-Modell","text"],
+  ["gtts","Gemini-Sprachmodell","text"],
   ["city","Ort für Wetter","text"],
   ["autoh","Automatischer Lagebericht ab (Uhr)","number",0,23,1]
 ];
+function cmdSection(fl){
+  var ch=mk("div",null,"row");ch.appendChild(mk("label","Eigene Codewörter & Aktionen"));
+  var cl=mk("ul");ch.appendChild(cl);
+  function draw(){
+    cl.innerHTML="";
+    S.cfg.cmds.forEach(function(c,i){
+      var li=mk("li",c.w+" → "+ACT[c.a]+(c.p?": "+(c.a==="page"?PAGES[c.p]:c.p):""));
+      var x=mk("button","×","x");x.onclick=function(){S.cfg.cmds.splice(i,1);save();draw();};li.appendChild(x);cl.appendChild(li);
+    });
+    if(!S.cfg.cmds.length)cl.appendChild(mk("li","Noch keine eigenen Codewörter","empty"));
+  }
+  draw();
+  var w=mk("input");w.placeholder="Codewort (z. B. guten morgen)";w.autocomplete="off";
+  var a=mk("select");Object.keys(ACT).forEach(function(k){a.appendChild(Object.assign(mk("option",ACT[k]),{value:k}));});
+  var ph=mk("div",null,"fr"),pcn=null;
+  function mkParam(k){
+    var e=null;
+    if(k==="page"){e=mk("select");Object.keys(PAGES).forEach(function(p){e.appendChild(Object.assign(mk("option",PAGES[p]),{value:p}));});}
+    else if(k==="timer"){e=mk("input");e.type="number";e.min="1";e.placeholder="Minuten";}
+    else if(k==="say"){e=mk("input");e.placeholder="Was soll Jarvis sagen?";}
+    else if(k==="ask"){e=mk("input");e.placeholder="Frage / Auftrag an Gemini";}
+    return e;
+  }
+  function setP(){ph.innerHTML="";pcn=mkParam(a.value);if(pcn)ph.appendChild(pcn);}
+  a.onchange=setP;setP();
+  var add=mk("button","Hinzufügen","go");add.type="button";
+  add.onclick=function(){
+    var word=w.value.trim().toLowerCase();if(!word)return;
+    var p=pcn?pcn.value.trim():"";
+    if((a.value==="say"||a.value==="ask"||a.value==="timer")&&!p)return;
+    S.cfg.cmds.push({w:word,a:a.value,p:p});save();w.value="";if(pcn&&pcn.tagName==="INPUT")pcn.value="";draw();
+  };
+  var f1=mk("div",null,"fr");f1.appendChild(w);var f2=mk("div",null,"fr");f2.appendChild(a);
+  var f3=mk("div",null,"fr");f3.appendChild(add);
+  ch.appendChild(f1);ch.appendChild(f2);ch.appendChild(ph);ch.appendChild(f3);
+  ch.appendChild(mk("p","Beim Sprechen löst das Codewort die Aktion direkt aus – ohne „Jarvis“. Getippt geht es auch.","hint"));
+  fl.appendChild(ch);
+}
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
   FL.forEach(function(f){
@@ -384,7 +647,7 @@ $("gear").onclick=function(){
       i=mk("select");
       voiceFill=function(){
         i.innerHTML="";
-        i.appendChild(Object.assign(mk("option","Automatisch (Deutsch)"),{value:""}));
+        i.appendChild(Object.assign(mk("option","Automatisch (beste deutsche)"),{value:""}));
         var all=allVoices(),de=all.filter(function(v){return /^de/i.test(v.lang);}),other=all.filter(function(v){return !/^de/i.test(v.lang);});
         function grp(label,list){if(!list.length)return;var g=document.createElement("optgroup");g.label=label;
           list.forEach(function(v){g.appendChild(Object.assign(mk("option",v.name+" ("+v.lang+")"),{value:v.name}));});i.appendChild(g);}
@@ -392,9 +655,13 @@ $("gear").onclick=function(){
         i.value=S.cfg.voice||"";
       };
       voiceFill();
+    }else if(f[2]==="select"){
+      i=mk("select");
+      f[3].forEach(function(o){i.appendChild(Object.assign(mk("option",o[1]),{value:o[0]}));});
+      i.value=S.cfg[f[0]];
     }else{
       i=mk("input");i.type=f[2];
-      if(f[0]==="gkey"){try{i.value=localStorage.getItem("jarvis-gkey")||"";}catch(e){}}
+      if(f[0]==="gkey")i.value=gkey();
       else i.value=S.cfg[f[0]]==null?"":S.cfg[f[0]];
       if(f[2]==="number"){i.min=f[3];i.max=f[4];i.step=f[5];}
       if(f[2]==="text"||f[2]==="password")i.autocomplete="off";
@@ -404,11 +671,10 @@ $("gear").onclick=function(){
       if(f[0]==="gkey"){try{localStorage.setItem("jarvis-gkey",i.value.trim());}catch(e){}return;}
       var val;
       if(f[2]==="number"){val=parseFloat(String(i.value).replace(",","."));if(isNaN(val))val=DEF[f[0]];val=Math.min(f[4],Math.max(f[3],val));i.value=val;}
-      else if(f[0]==="codes"||f[0]==="city"||f[0]==="voice"){val=i.value.trim();}
+      else if(f[2]==="select"||f[2]==="voice"||f[0]==="codes"||f[0]==="city"){val=i.value.trim();}
       else{val=i.value.trim()||DEF[f[0]];}
-      S.cfg[f[0]]=val;save();pv();render();
-      if(f[0]==="voice")say("Hallo "+S.cfg.name+", so klinge ich.",true);
-      $("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
+      S.cfg[f[0]]=val;save();pv();render();setState("off",idleText());
+      if(f[0]==="voice"||f[0]==="engine"||f[0]==="gvoice"||f[0]==="rate"||f[0]==="pitch"){ensureAC();say("Hallo "+S.cfg.name+", so klinge ich.",{nolog:true});}
     };
     r.appendChild(l);r.appendChild(i);fl.appendChild(r);
   });
@@ -419,11 +685,24 @@ $("gear").onclick=function(){
   cb2.onchange=function(){S.cfg.auto=cb2.checked;save();};
   lb.appendChild(cb2);lb.appendChild(document.createTextNode("Lagebericht beim ersten Öffnen am Tag"));
   bh.appendChild(lb);fl.appendChild(bh);
+  cmdSection(fl);
   $("dlg").showModal();
 };
 $("ok").onclick=function(){$("dlg").close();};
 
-$("status").textContent="Tippen oder „"+cap(S.cfg.wake)+"“ sagen";
+/* ---------- Takt & Start ---------- */
+var tc=0;
+setInterval(function(){
+  var d=new Date();tc++;
+  $("today-header").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});
+  $("clock").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  checkDailyReset();
+  if(tc%30===0&&editEv<0)renderEv();
+  autoBrief();
+},1000);
+
+setState("off",idleText());
 render();
 autoBrief();
 })();
