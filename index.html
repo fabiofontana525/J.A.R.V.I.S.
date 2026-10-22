@@ -178,7 +178,7 @@ var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonnt
 var GBASE="https://generativelanguage.googleapis.com/v1beta/models/";
 var ACT={say:"Text sagen",lagebericht:"Lagebericht",update:"Update (Nachrichten)",ask:"Frage an Gemini",page:"Seite öffnen",timer:"Timer (Minuten)"};
 var PAGES={home:"Start",tools:"Rechner",timer:"Timer",info:"Übersicht",habits:"Gewohnheiten",notes:"Notizen"};
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-2.5-flash",city:"",voice:"",pitch:1,auto:true,autoh:8,engine:"device",gvoice:"Kore",gtts:"gemini-2.5-flash-preview-tts",cmds:[]};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],todos:[],events:[],hdone:{},countdown:null,lastDay:"",lastBrief:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
@@ -187,6 +187,8 @@ function fix(){
   if(!S.ts&&!S.habits.length){S.habits=[{name:"Fussball Training",day:"Montag"},{name:"Fussball Match",day:"Samstag"}];}
   S.cfg=Object.assign({},DEF,S.cfg||{});
   S.cfg.cmds=Array.isArray(S.cfg.cmds)?S.cfg.cmds:[];
+  if(/gemini-2\.[05]/.test(S.cfg.gmodel))S.cfg.gmodel=DEF.gmodel;
+  if(/gemini-2\.[05]/.test(S.cfg.gtts))S.cfg.gtts=DEF.gtts;
   if(!S.week||S.week.length!==7)S.week=[[],[],[],[],[],[],[]];
   S.week=S.week.map(function(d){return (d||[]).map(function(x){return typeof x==="string"?{t:x,done:false}:x;});});
   if(S.countdown){S.events.push({name:S.countdown.name,target:S.countdown.target});S.countdown=null;}
@@ -384,11 +386,15 @@ function splitS(t){
 function takeSentence(b){var re=/[.!?]\s/g,m,min=geminiOn()?90:20;while((m=re.exec(b))){if(m.index>=min)return m.index+1;}return -1;}
 function b64f32(d){var bin=atob(d),n=bin.length>>1,f=new Float32Array(n);for(var i=0;i<n;i++){var v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v&32768)v-=65536;f[i]=v/32768;}return f;}
 async function geminiAudio(t){
-  try{
-    var r=await fetch(GBASE+encodeURIComponent(S.cfg.gtts)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":gkey()},body:JSON.stringify({contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}})});
-    if(!r.ok)return null;var j=await r.json();
-    return b64f32(j.candidates[0].content.parts[0].inlineData.data);
-  }catch(e){return null;}
+  var ms=[S.cfg.gtts,"gemini-3.8-flash-tts","gemini-3.1-flash-tts-preview"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  for(var i=0;i<ms.length;i++){
+    try{
+      var r=await fetch(GBASE+encodeURIComponent(ms[i])+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":gkey()},body:JSON.stringify({contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}})});
+      if(r.ok){var j=await r.json();return b64f32(j.candidates[0].content.parts[0].inlineData.data);}
+      if(r.status!==404&&r.status!==400)return null;
+    }catch(e){return null;}
+  }
+  return null;
 }
 function playBuf(f){return new Promise(function(res){
   if(!ac||ac.state!=="running"){res(false);return;}
@@ -460,21 +466,39 @@ document.addEventListener("pointerdown",function(){
 
 /* ---------- Gemini: gestreamte Antwort, wird schon beim Eintreffen gesprochen ---------- */
 function takeSentenceLoop(buf,speak){var k;while((k=takeSentence(buf))>0){speak(buf.slice(0,k));buf=buf.slice(k).replace(/^\s+/,"");}return buf;}
+var lastErr="";
+function errHint(st,msg){
+  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – bitte Schlüssel prüfen":st===429?"Limit erreicht – kurz warten":"Serverfehler bei Google";
+  return "HTTP "+st+": "+h+(msg?" ("+msg+")":"");
+}
 async function ask(q,o){
-  o=o||{};var key=gkey();if(!key)return null;
-  var model=S.cfg.gmodel;
-  var body={
-    systemInstruction:{parts:[{text:"Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"")}]},
-    contents:[{role:"user",parts:[{text:q}]}],
-    tools:[{google_search:{}}],
-    generationConfig:{maxOutputTokens:400,temperature:.4}
-  };
-  if(/2\.5-flash/.test(model))body.generationConfig.thinkingConfig={thinkingBudget:0};
+  o=o||{};var key=gkey();lastErr="";if(!key){lastErr="Kein Schlüssel eingetragen";return null;}
+  var sys="Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
+  function mkBody(model,tools,think){
+    var b={systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:q}]}],generationConfig:{maxOutputTokens:1024,temperature:.4}};
+    if(tools)b.tools=[{google_search:{}}];
+    if(think){if(/2\.5/.test(model))b.generationConfig.thinkingConfig={thinkingBudget:0};else if(/3/.test(model))b.generationConfig.thinkingConfig={thinkingLevel:"minimal"};}
+    return b;
+  }
+  var models=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  var variants=[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
+  for(var mi=0;mi<models.length&&!r&&!stop;mi++){
+    for(var vi=0;vi<variants.length;vi++){
+      var resp;
+      try{resp=await fetch(GBASE+encodeURIComponent(models[mi])+":streamGenerateContent?alt=sse",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify(mkBody(models[mi],variants[vi][0],variants[vi][1]))});}
+      catch(e){lastErr="Keine Verbindung zu Google (Internet oder Blockierung)";stop=true;break;}
+      if(resp.ok&&resp.body){r=resp;used=models[mi];break;}
+      var msg="";try{var ej=await resp.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,140):"";}catch(e){}
+      lastErr=errHint(resp.status,msg);
+      if(resp.status===401||resp.status===403||resp.status===429){stop=true;break;}
+      if(resp.status===404)break;
+    }
+  }
+  if(!r)return null;
+  if(used!==S.cfg.gmodel){S.cfg.gmodel=used;save();}
   var div=o.log?log("","ai"):null,acc="",buf="",ok=false;
   if(o.speak){stopSpeak();spk.streamOpen=true;}
   try{
-    var r=await fetch(GBASE+encodeURIComponent(model)+":streamGenerateContent?alt=sse",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify(body)});
-    if(!r.ok||!r.body)throw new Error("http");
     var rd=r.body.getReader(),dec=new TextDecoder(),sb="";
     for(;;){
       var c=await rd.read();if(c.done)break;
@@ -487,13 +511,13 @@ async function ask(q,o){
           var t=ps.map(function(x){return x.text||"";}).join("");if(!t)continue;
           ok=true;acc+=t;buf+=t;
           var shown=cleanTxt(acc);if(div)div.textContent=shown;if(o.onText)o.onText(shown);
-          if(o.speak)buf=takeSentenceLoop(buf,function(s){enqueue(s);});
+          if(o.speak)buf=takeSentenceLoop(buf,function(s2){enqueue(s2);});
         }catch(e){}
       }
     }
   }catch(e){}
   if(o.speak){if(buf.trim())enqueue(buf);spk.streamOpen=false;pump();}
-  if(!ok){if(div)div.remove();return null;}
+  if(!ok){if(div)div.remove();lastErr="Leere Antwort von Gemini";return null;}
   return cleanTxt(acc);
 }
 
@@ -524,7 +548,7 @@ async function runUpdate(o){
   var d=new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   var txt=await ask("Heute ist "+d+". Nenne die 2 bis 3 wichtigsten aktuellen Nachrichten des Tages weltweit, je ein prägnanter Satz. Keine Einleitung, keine Aufzählungszeichen.",{speak:!!o.speak,log:!!o.log,onText:function(t){tgt.textContent=t;}});
   if(txt){updCache={t:txt,ts:Date.now()};return true;}
-  tgt.textContent="Nachrichten konnten nicht geladen werden.";setState("off",idleText());
+  tgt.textContent="Nachrichten konnten nicht geladen werden. "+lastErr;setState("off",idleText());
   if(o.speak)say("Die Nachrichten konnte ich gerade nicht abrufen, "+S.cfg.name+".");
   return false;
 }
@@ -556,7 +580,7 @@ async function askChat(q){
   if(!gkey())return say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein, "+S.cfg.name+".");
   setState("think","Sucht im Netz...");
   var res=await ask(q,{speak:true,log:true});
-  if(!res){setState("off",idleText());say("Das konnte ich im Netz nicht finden, "+S.cfg.name+".");}
+  if(!res){setState("off",idleText());log("Fehler: "+(lastErr||"keine Antwort"),"ai");say("Das hat nicht geklappt, "+S.cfg.name+". Die Details stehen im Verlauf.",{nolog:true});}
 }
 async function handle(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
@@ -564,7 +588,7 @@ async function handle(raw){
   for(var ci=0;ci<S.cfg.cmds.length;ci++){var c=S.cfg.cmds[ci];if(c.w&&lc.indexOf(c.w)!==-1)return runCmd(c);}
   if(/update/.test(lc))return runUpdate({speak:true,log:true});
   if(/lagebericht/.test(lc))return doReport();
-  if(/wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
+  if(/wie\s?viel uhr|wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
   if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
