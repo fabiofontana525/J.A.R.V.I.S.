@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html><!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
@@ -373,10 +373,13 @@ var voice=null,voiceFill=null,pendingSpeak=null;
 function pv(){var sv=S.cfg.voice;voice=allVoices().find(function(x){return x.name===sv;})||bestVoice();}
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=function(){pv();if(voiceFill&&$("dlg").open)voiceFill();};}
 
-var spk={q:[],busy:false,gen:0,src:null,streamOpen:false},ac=null;
+var spk={q:[],busy:false,gen:0,src:null,streamOpen:false,lastCancel:0},ac=null;
+function speaking(){return spk.busy||spk.q.length>0||spk.streamOpen;}
+function micPause(){if(rec&&active){try{rec.stop();}catch(e){}}}
+function micResume(){setTimeout(function(){if(!speaking())startRec();},350);}
 function geminiOn(){return S.cfg.engine==="gemini"&&!!gkey();}
 function ensureAC(){try{if(!ac){var C=window.AudioContext||window.webkitAudioContext;if(C)ac=new C();}if(ac&&ac.state==="suspended")ac.resume();}catch(e){}}
-function stopSpeak(){spk.gen++;spk.q=[];spk.busy=false;spk.streamOpen=false;try{if("speechSynthesis" in window)speechSynthesis.cancel();}catch(e){}if(spk.src){try{spk.src.stop();}catch(e){}spk.src=null;}}
+function stopSpeak(){spk.gen++;spk.q=[];spk.busy=false;spk.streamOpen=false;try{if("speechSynthesis" in window&&(speechSynthesis.speaking||speechSynthesis.pending)){speechSynthesis.cancel();spk.lastCancel=Date.now();}}catch(e){}if(spk.src){try{spk.src.stop();}catch(e){}spk.src=null;}}
 function cleanTxt(t){return t.replace(/https?:\/\/\S+/g,"").replace(/\[\d+(?:,\s*\d+)*\]/g,"").replace(/[*_#`>~]/g," ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,"").replace(/[ \t]+/g," ").trim();}
 function splitS(t){
   var th=geminiOn()?220:25,a=t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g)||[t],o=[],cur="";
@@ -409,7 +412,8 @@ function devSpeak(t){return new Promise(function(res){
   u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1;
   u.onstart=function(){pendingSpeak=null;};u.onend=fin;u.onerror=fin;
   tm=setTimeout(fin,Math.max(5000,t.length*110));
-  speechSynthesis.speak(u);
+  var wait=Math.max(0,150-(Date.now()-spk.lastCancel));
+  setTimeout(function(){try{if(speechSynthesis.paused)speechSynthesis.resume();speechSynthesis.speak(u);}catch(e){fin();}},wait);
 });}
 function enqueue(t,dev){
   t=cleanTxt(t);if(!t)return;
@@ -419,8 +423,8 @@ function enqueue(t,dev){
 async function pump(){
   if(spk.busy)return;
   var it=spk.q.shift();
-  if(!it){if(!spk.streamOpen)setState("off",idleText());return;}
-  spk.busy=true;var g=spk.gen;setState("speak");
+  if(!it){if(!spk.streamOpen){setState("off",idleText());micResume();}return;}
+  spk.busy=true;var g=spk.gen;setState("speak");micPause();
   try{
     var ok=false;
     if(it.p){var buf=await it.p;if(g!==spk.gen)return;if(buf)ok=await playBuf(buf);}
@@ -431,7 +435,7 @@ async function pump(){
   spk.busy=false;pump();
 }
 function say(txt,o){o=o||{};if(!o.nolog)log(txt,"ai");stopSpeak();enqueue(txt,o.dev);}
-$("cv").onclick=function(){stopSpeak();setState("off",idleText());};
+$("cv").onclick=function(){stopSpeak();setState("off",idleText());micResume();};
 
 /* ---------- Spracherkennung ---------- */
 var rec=null,active=false;
@@ -439,7 +443,7 @@ function startRec(){if(!active||!rec)return;try{rec.start();}catch(e){}}
 function wakeWords(){return [S.cfg.wake].concat(String(S.cfg.codes||"").split(",")).map(function(x){return x.trim().toLowerCase();}).filter(Boolean);}
 function trigWords(){return S.cfg.cmds.map(function(c){return c.w;}).concat(["lagebericht","update"]);}
 function onSpeech(t){
-  if(spk.busy||spk.q.length)return; /* nicht auf die eigene Stimme hören */
+  if(speaking())return; /* nicht auf die eigene Stimme hören */
   var lc=t.toLowerCase();
   if(trigWords().some(function(w){return w&&lc.indexOf(w)!==-1;})){handle(t);return;}
   var ws=wakeWords();
@@ -456,7 +460,7 @@ function onSpeech(t){
 function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return false;
   rec=new SR();rec.lang="de-DE";rec.continuous=true;rec.interimResults=false;
   rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;onSpeech(t);};
-  rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active)setTimeout(startRec,250);};
+  rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active&&!speaking())setTimeout(startRec,250);};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
 document.addEventListener("pointerdown",function(){
@@ -468,7 +472,7 @@ document.addEventListener("pointerdown",function(){
 function takeSentenceLoop(buf,speak){var k;while((k=takeSentence(buf))>0){speak(buf.slice(0,k));buf=buf.slice(k).replace(/^\s+/,"");}return buf;}
 var lastErr="";
 function errHint(st,msg){
-  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – bitte Schlüssel prüfen":st===429?"Limit erreicht – kurz warten":"Serverfehler bei Google";
+  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – neuen Schlüssel kopieren; bei „AQ.“-Schlüsseln in der Google Cloud Console einen klassischen AIza-Schlüssel erstellen":st===429?"Limit erreicht – kurz warten":"Serverfehler bei Google";
   return "HTTP "+st+": "+h+(msg?" ("+msg+")":"");
 }
 async function ask(q,o){
