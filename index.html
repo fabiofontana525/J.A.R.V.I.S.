@@ -492,7 +492,7 @@ document.addEventListener("pointerdown",function(){
 function takeSentenceLoop(buf,speak){var k;while((k=takeSentence(buf))>0){speak(buf.slice(0,k));buf=buf.slice(k).replace(/^\s+/,"");}return buf;}
 var lastErr="";
 function errHint(st,msg){
-  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – neuen Schlüssel kopieren; bei „AQ.“-Schlüsseln in der Google Cloud Console einen klassischen AIza-Schlüssel erstellen":st===429?"Limit erreicht – kurz warten":"Serverfehler bei Google";
+  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – neuen Schlüssel kopieren; bei „AQ.“-Schlüsseln in der Google Cloud Console einen klassischen AIza-Schlüssel erstellen":st===429?"Limit erreicht – kurz warten":(st>=500?"Google ist gerade überlastet – dein Schlüssel ist in Ordnung, bitte gleich nochmal versuchen":"Serverfehler bei Google");
   return "HTTP "+st+": "+h+(msg?" ("+msg+")":"");
 }
 async function ask(q,o){
@@ -515,7 +515,7 @@ async function ask(q,o){
       var msg="";try{var ej=await resp.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,140):"";}catch(e){}
       lastErr=errHint(resp.status,msg);
       if(resp.status===401||resp.status===403||resp.status===429){stop=true;break;}
-      if(resp.status===404)break;
+      if(resp.status===404||resp.status>=500)break;
     }
   }
   if(!r)return null;
@@ -692,6 +692,7 @@ async function testKey(){
   var k=gkey();if(!k)return "Kein Schlüssel eingetragen.";
   var info=" (Schlüssel beginnt mit „"+k.slice(0,3)+"“, "+k.length+" Zeichen)";
   var ms=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  var over=false;
   for(var i=0;i<ms.length;i++){
     var r;
     try{r=await gfetch(encodeURIComponent(ms[i])+":generateContent",{contents:[{parts:[{text:"Antworte nur mit: ok"}]}],generationConfig:{maxOutputTokens:50}});}
@@ -699,8 +700,10 @@ async function testKey(){
     if(r.ok){if(S.cfg.gmodel!==ms[i]){S.cfg.gmodel=ms[i];save();}return "✓ Schlüssel funktioniert (Modell "+ms[i]+").";}
     var msg="";try{var ej=await r.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,160):"";}catch(e){}
     lastErr=errHint(r.status,msg);
-    if(r.status!==404)return "✗ "+lastErr+info;
+    if(r.status>=500)over=true;
+    if(r.status!==404&&r.status<500)return "✗ "+lastErr+info;
   }
+  if(over)return "✓ Schlüssel wird akzeptiert, aber Google ist gerade überlastet (503). In ein paar Minuten nochmal testen.";
   return "✗ "+lastErr+info;
 }
 function keyTest(){
