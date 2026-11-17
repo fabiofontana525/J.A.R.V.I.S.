@@ -1,4 +1,4 @@
-<!DOCTYPE html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
@@ -178,7 +178,7 @@ var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonnt
 var GBASE="https://generativelanguage.googleapis.com/v1beta/models/";
 var ACT={say:"Text sagen",lagebericht:"Lagebericht",update:"Update (Nachrichten)",ask:"Frage an Gemini",page:"Seite öffnen",timer:"Timer (Minuten)"};
 var PAGES={home:"Start",tools:"Rechner",timer:"Timer",info:"Übersicht",habits:"Gewohnheiten",notes:"Notizen"};
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,convo:45,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],todos:[],events:[],hdone:{},countdown:null,lastDay:"",lastBrief:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
@@ -200,7 +200,8 @@ var $=function(i){return document.getElementById(i);};
 function save(){S.ts=Date.now();try{localStorage.setItem("jarvis-v5",JSON.stringify(S));}catch(e){}}
 function mk(tag,txt,cls){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
-function gkey(){try{return localStorage.getItem("jarvis-gkey")||"";}catch(e){return "";}}
+function cleanKey(k){return String(k||"").replace(/^\s*key\s*=/i,"").replace(/[^A-Za-z0-9._\-]/g,"");}
+function gkey(){try{return cleanKey(localStorage.getItem("jarvis-gkey"));}catch(e){return "";}}
 function idleText(){return "Tippen oder „"+cap(S.cfg.wake)+"“ sagen";}
 function wk0(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d.toDateString();}
 function fdt(ts){return new Date(ts).toLocaleString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
@@ -374,9 +375,10 @@ function pv(){var sv=S.cfg.voice;voice=allVoices().find(function(x){return x.nam
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=function(){pv();if(voiceFill&&$("dlg").open)voiceFill();};}
 
 var spk={q:[],busy:false,gen:0,src:null,streamOpen:false,lastCancel:0},ac=null;
+var convoUntil=0,unlocked=false,greeted=false;
 function speaking(){return spk.busy||spk.q.length>0||spk.streamOpen;}
 function micPause(){if(rec&&active){try{rec.stop();}catch(e){}}}
-function micResume(){setTimeout(function(){if(!speaking())startRec();},350);}
+function micResume(){setTimeout(function(){if(!speaking()){convoUntil=S.cfg.convo>0?Date.now()+S.cfg.convo*1000:0;startRec();}},350);}
 function geminiOn(){return S.cfg.engine==="gemini"&&!!gkey();}
 function ensureAC(){try{if(!ac){var C=window.AudioContext||window.webkitAudioContext;if(C)ac=new C();}if(ac&&ac.state==="suspended")ac.resume();}catch(e){}}
 function stopSpeak(){spk.gen++;spk.q=[];spk.busy=false;spk.streamOpen=false;try{if("speechSynthesis" in window&&(speechSynthesis.speaking||speechSynthesis.pending)){speechSynthesis.cancel();spk.lastCancel=Date.now();}}catch(e){}if(spk.src){try{spk.src.stop();}catch(e){}spk.src=null;}}
@@ -388,11 +390,21 @@ function splitS(t){
 }
 function takeSentence(b){var re=/[.!?]\s/g,m,min=geminiOn()?90:20;while((m=re.exec(b))){if(m.index>=min)return m.index+1;}return -1;}
 function b64f32(d){var bin=atob(d),n=bin.length>>1,f=new Float32Array(n);for(var i=0;i<n;i++){var v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v&32768)v-=65536;f[i]=v/32768;}return f;}
+/* Anfrage an Gemini: erst Header, bei 401/403 zusätzlich per ?key= (manche neue AQ-Schlüssel brauchen das) */
+async function gfetch(path,body){
+  var key=gkey(),url=GBASE+path,sep=path.indexOf("?")>-1?"&":"?",js=JSON.stringify(body);
+  var r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:js});
+  if(r.status===401||r.status===403){
+    try{var r2=await fetch(url+sep+"key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:js});
+      if(r2.ok)return r2;}catch(e){}
+  }
+  return r;
+}
 async function geminiAudio(t){
   var ms=[S.cfg.gtts,"gemini-3.8-flash-tts","gemini-3.1-flash-tts-preview"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
   for(var i=0;i<ms.length;i++){
     try{
-      var r=await fetch(GBASE+encodeURIComponent(ms[i])+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":gkey()},body:JSON.stringify({contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}})});
+      var r=await gfetch(encodeURIComponent(ms[i])+":generateContent",{contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}});
       if(r.ok){var j=await r.json();return b64f32(j.candidates[0].content.parts[0].inlineData.data);}
       if(r.status!==404&&r.status!==400)return null;
     }catch(e){return null;}
@@ -407,7 +419,7 @@ function devSpeak(t){return new Promise(function(res){
   if(!("speechSynthesis" in window)){res();return;}
   var done=false,tm=null;
   function fin(){if(!done){done=true;clearTimeout(tm);res();}}
-  var u=new SpeechSynthesisUtterance(t);
+  var u=new SpeechSynthesisUtterance(t);spk.cur=u;
   u.lang=voice?voice.lang:"de-DE";if(voice)u.voice=voice;
   u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1;
   u.onstart=function(){pendingSpeak=null;};u.onend=fin;u.onerror=fin;
@@ -443,8 +455,9 @@ function startRec(){if(!active||!rec)return;try{rec.start();}catch(e){}}
 function wakeWords(){return [S.cfg.wake].concat(String(S.cfg.codes||"").split(",")).map(function(x){return x.trim().toLowerCase();}).filter(Boolean);}
 function trigWords(){return S.cfg.cmds.map(function(c){return c.w;}).concat(["lagebericht","update"]);}
 function onSpeech(t){
-  if(speaking())return; /* nicht auf die eigene Stimme hören */
+  if(speaking()||state==="think")return; /* nicht auf die eigene Stimme hören */
   var lc=t.toLowerCase();
+  if(Date.now()<convoUntil){handle(t);return;} /* offenes Gespräch: kein Aktivierungswort nötig */
   if(trigWords().some(function(w){return w&&lc.indexOf(w)!==-1;})){handle(t);return;}
   var ws=wakeWords();
   if(!ws.length){handle(t);return;}
@@ -461,11 +474,18 @@ function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecogniti
   rec=new SR();rec.lang="de-DE";rec.continuous=true;rec.interimResults=false;
   rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;onSpeech(t);};
   rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active&&!speaking())setTimeout(startRec,250);};
+  rec.onerror=function(e){var er=e&&e.error;if(er==="not-allowed"||er==="service-not-allowed"){active=false;setState("off","Mikrofon nicht erlaubt – bitte in den Safari-Einstellungen erlauben");}};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
+function unlockAudio(){
+  if(unlocked)return;unlocked=true;
+  try{if("speechSynthesis" in window){var u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);}}catch(e){}
+  try{ensureAC();if(ac){var b=ac.createBuffer(1,1,22050),sr=ac.createBufferSource();sr.buffer=b;sr.connect(ac.destination);sr.start(0);}}catch(e){}
+}
 document.addEventListener("pointerdown",function(){
-  ensureAC();activate();
+  var first=!unlocked;unlockAudio();ensureAC();activate();
   if(pendingSpeak){var pt=pendingSpeak;pendingSpeak=null;say(pt,{nolog:true});}
+  else if(first&&!greeted){greeted=true;setTimeout(function(){if(!speaking())say("Hallo "+S.cfg.name+", ich höre zu.",{nolog:true});},350);}
 });
 
 /* ---------- Gemini: gestreamte Antwort, wird schon beim Eintreffen gesprochen ---------- */
@@ -489,7 +509,7 @@ async function ask(q,o){
   for(var mi=0;mi<models.length&&!r&&!stop;mi++){
     for(var vi=0;vi<variants.length;vi++){
       var resp;
-      try{resp=await fetch(GBASE+encodeURIComponent(models[mi])+":streamGenerateContent?alt=sse",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify(mkBody(models[mi],variants[vi][0],variants[vi][1]))});}
+      try{resp=await gfetch(encodeURIComponent(models[mi])+":streamGenerateContent?alt=sse",mkBody(models[mi],variants[vi][0],variants[vi][1]));}
       catch(e){lastErr="Keine Verbindung zu Google (Internet oder Blockierung)";stop=true;break;}
       if(resp.ok&&resp.body){r=resp;used=models[mi];break;}
       var msg="";try{var ej=await resp.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,140):"";}catch(e){}
@@ -627,7 +647,8 @@ var FL=[
   ["gmodel","Gemini-Modell","text"],
   ["gtts","Gemini-Sprachmodell","text"],
   ["city","Ort für Wetter","text"],
-  ["autoh","Automatischer Lagebericht ab (Uhr)","number",0,23,1]
+  ["autoh","Automatischer Lagebericht ab (Uhr)","number",0,23,1],
+  ["convo","Gespräch bleibt offen (Sekunden, 0 = aus)","number",0,300,5]
 ];
 function cmdSection(fl){
   var ch=mk("div",null,"row");ch.appendChild(mk("label","Eigene Codewörter & Aktionen"));
@@ -667,6 +688,27 @@ function cmdSection(fl){
   ch.appendChild(mk("p","Beim Sprechen löst das Codewort die Aktion direkt aus – ohne „Jarvis“. Getippt geht es auch.","hint"));
   fl.appendChild(ch);
 }
+async function testKey(){
+  var k=gkey();if(!k)return "Kein Schlüssel eingetragen.";
+  var info=" (Schlüssel beginnt mit „"+k.slice(0,3)+"“, "+k.length+" Zeichen)";
+  var ms=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  for(var i=0;i<ms.length;i++){
+    var r;
+    try{r=await gfetch(encodeURIComponent(ms[i])+":generateContent",{contents:[{parts:[{text:"Antworte nur mit: ok"}]}],generationConfig:{maxOutputTokens:50}});}
+    catch(e){return "✗ Keine Verbindung zu Google (Internet oder Blockierung).";}
+    if(r.ok){if(S.cfg.gmodel!==ms[i]){S.cfg.gmodel=ms[i];save();}return "✓ Schlüssel funktioniert (Modell "+ms[i]+").";}
+    var msg="";try{var ej=await r.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,160):"";}catch(e){}
+    lastErr=errHint(r.status,msg);
+    if(r.status!==404)return "✗ "+lastErr+info;
+  }
+  return "✗ "+lastErr+info;
+}
+function keyTest(){
+  var r=mk("div",null,"row"),b=mk("button","Schlüssel testen","go"),o=mk("div","","hint");
+  b.type="button";o.style.fontSize="15px";o.style.overflowWrap="anywhere";
+  b.onclick=async function(){o.textContent="Teste …";o.textContent=await testKey();};
+  r.appendChild(b);r.appendChild(o);return r;
+}
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
   FL.forEach(function(f){
@@ -696,7 +738,7 @@ $("gear").onclick=function(){
     }
     i.id="c-"+f[0];
     i.onchange=function(){
-      if(f[0]==="gkey"){try{localStorage.setItem("jarvis-gkey",i.value.trim());}catch(e){}return;}
+      if(f[0]==="gkey"){var ck=cleanKey(i.value);i.value=ck;try{localStorage.setItem("jarvis-gkey",ck);}catch(e){}return;}
       var val;
       if(f[2]==="number"){val=parseFloat(String(i.value).replace(",","."));if(isNaN(val))val=DEF[f[0]];val=Math.min(f[4],Math.max(f[3],val));i.value=val;}
       else if(f[2]==="select"||f[2]==="voice"||f[0]==="codes"||f[0]==="city"){val=i.value.trim();}
@@ -705,6 +747,7 @@ $("gear").onclick=function(){
       if(f[0]==="voice"||f[0]==="engine"||f[0]==="gvoice"||f[0]==="rate"||f[0]==="pitch"){ensureAC();say("Hallo "+S.cfg.name+", so klinge ich.",{nolog:true});}
     };
     r.appendChild(l);r.appendChild(i);fl.appendChild(r);
+    if(f[0]==="gkey")fl.appendChild(keyTest());
   });
   var bh=mk("div",null,"row"),lb=mk("label",null),cb2=mk("input");
   cb2.type="checkbox";cb2.checked=!!S.cfg.auto;
