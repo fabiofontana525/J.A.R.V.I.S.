@@ -492,7 +492,7 @@ document.addEventListener("pointerdown",function(){
 function takeSentenceLoop(buf,speak){var k;while((k=takeSentence(buf))>0){speak(buf.slice(0,k));buf=buf.slice(k).replace(/^\s+/,"");}return buf;}
 var lastErr="";
 function errHint(st,msg){
-  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – neuen Schlüssel kopieren; bei „AQ.“-Schlüsseln in der Google Cloud Console einen klassischen AIza-Schlüssel erstellen":st===429?"Limit erreicht – kurz warten":(st>=500?"Google ist gerade überlastet – dein Schlüssel ist in Ordnung, bitte gleich nochmal versuchen":"Serverfehler bei Google");
+  var h=st===404?"Modell nicht gefunden – in den Einstellungen ein anderes Gemini-Modell eintragen":st===400?"Anfrage abgelehnt":(st===401||st===403)?"Schlüssel wird abgelehnt – neuen Schlüssel kopieren; bei „AQ.“-Schlüsseln in der Google Cloud Console einen klassischen AIza-Schlüssel erstellen":st===429?"Kostenloses Google-Limit erreicht – später nochmal versuchen oder in den Einstellungen ein anderes Modell eintragen":(st>=500?"Google ist gerade überlastet – dein Schlüssel ist in Ordnung, bitte gleich nochmal versuchen":"Serverfehler bei Google");
   return "HTTP "+st+": "+h+(msg?" ("+msg+")":"");
 }
 async function ask(q,o){
@@ -504,7 +504,7 @@ async function ask(q,o){
     if(think){if(/2\.5/.test(model))b.generationConfig.thinkingConfig={thinkingBudget:0};else if(/3/.test(model))b.generationConfig.thinkingConfig={thinkingLevel:"minimal"};}
     return b;
   }
-  var models=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  var models=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash","gemini-flash-lite-latest"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
   var variants=[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
   for(var mi=0;mi<models.length&&!r&&!stop;mi++){
     for(var vi=0;vi<variants.length;vi++){
@@ -514,7 +514,8 @@ async function ask(q,o){
       if(resp.ok&&resp.body){r=resp;used=models[mi];break;}
       var msg="";try{var ej=await resp.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,140):"";}catch(e){}
       lastErr=errHint(resp.status,msg);
-      if(resp.status===401||resp.status===403||resp.status===429){stop=true;break;}
+      if(resp.status===401||resp.status===403){stop=true;break;}
+      if(resp.status===429){if(vi<2){vi=1;continue;}break;}
       if(resp.status===404||resp.status>=500)break;
     }
   }
@@ -615,6 +616,15 @@ async function handle(raw){
   if(/wie\s?viel uhr|wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
   if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
+  var dn="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)",vb="(?:trag|trage|füge|fuege|setze|schreib)";
+  function addDay(dw,txt){
+    txt=txt.replace(/\s+(?:ein|hinzu|eintragen)$/,"").trim();if(!txt)return false;
+    var di=DL.indexOf(dw);S.week[di].push({t:cap(txt),done:false});openD[di]=true;save();render();
+    say(cap(txt)+" für "+DAYS[di]+" eingetragen, "+N+".");return true;
+  }
+  if((m=lc.match(new RegExp("^"+dn+"\\s+(.+)$")))&&m[2].split(/\s+/).length<=5&&!/\?$/.test(lc)){if(addDay(m[1],m[2]))return;}
+  if((m=lc.match(new RegExp("^"+vb+"\\s+"+dn+"\\s+(.+)$")))){if(addDay(m[1],m[2]))return;}
+  if((m=lc.match(new RegExp("^"+vb+"\\s+(.+?)\\s+"+dn+"(?:\\s+(?:ein|hinzu))?$")))){if(addDay(m[2],m[1]))return;}
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
     var dIdx=DL.indexOf(m[2]);S.week[dIdx].push({t:cap(m[1]),done:false});openD[dIdx]=true;save();render();
     return say(cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".");
@@ -691,7 +701,7 @@ function cmdSection(fl){
 async function testKey(){
   var k=gkey();if(!k)return "Kein Schlüssel eingetragen.";
   var info=" (Schlüssel beginnt mit „"+k.slice(0,3)+"“, "+k.length+" Zeichen)";
-  var ms=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
+  var ms=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash","gemini-flash-lite-latest"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
   var over=false;
   for(var i=0;i<ms.length;i++){
     var r;
