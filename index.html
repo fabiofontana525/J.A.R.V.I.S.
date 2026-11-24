@@ -497,7 +497,7 @@ function errHint(st,msg){
 }
 async function ask(q,o){
   o=o||{};var key=gkey();lastErr="";if(!key){lastErr="Kein Schlüssel eingetragen";return null;}
-  var sys="Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
+  var sys="Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben. Du kannst keine Einträge, Listen, Termine oder Einstellungen ändern und darfst nie behaupten, etwas eingetragen oder gespeichert zu haben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
   function mkBody(model,tools,think){
     var b={systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:q}]}],generationConfig:{maxOutputTokens:1024,temperature:.4}};
     if(tools)b.tools=[{google_search:{}}];
@@ -505,7 +505,7 @@ async function ask(q,o){
     return b;
   }
   var models=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash","gemini-flash-lite-latest"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
-  var variants=[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
+  var variants=o.search===false?[[false,true],[false,false]]:[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
   for(var mi=0;mi<models.length&&!r&&!stop;mi++){
     for(var vi=0;vi<variants.length;vi++){
       var resp;
@@ -515,7 +515,7 @@ async function ask(q,o){
       var msg="";try{var ej=await resp.json();msg=(ej.error&&ej.error.message)?ej.error.message.slice(0,140):"";}catch(e){}
       lastErr=errHint(resp.status,msg);
       if(resp.status===401||resp.status===403){stop=true;break;}
-      if(resp.status===429){if(vi<2){vi=1;continue;}break;}
+      if(resp.status===429){if(vi<variants.length-1){vi=variants.length-2;continue;}break;}
       if(resp.status===404||resp.status>=500)break;
     }
   }
@@ -604,9 +604,64 @@ function runCmd(c){
 async function askChat(q){
   if(!gkey())return say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein, "+S.cfg.name+".");
   setState("think","Sucht im Netz...");
-  var res=await ask(q,{speak:true,log:true});
+  var res=await ask(q,{speak:true,log:true,search:needsSearch(String(q).toLowerCase())});
   if(!res){setState("off",idleText());log("Fehler: "+(lastErr||"keine Antwort"),"ai");say("Das hat nicht geklappt, "+S.cfg.name+". Die Details stehen im Verlauf.",{nolog:true});}
 }
+/* ---------- Lokale Befehle: Listen & Termine ohne Internet ---------- */
+var MON=["januar","februar","märz","april","mai","juni","juli","august","september","oktober","november","dezember"];
+function parseWhen(txt){
+  var now=new Date(),t0=new Date(now);t0.setHours(0,0,0,0);
+  var d=null,rest=(" "+txt+" ").replace(/\s+/g," "),m,noYear=false,hasTime=false;
+  if((m=rest.match(/ (heute|übermorgen|morgen) /))){d=new Date(t0);d.setDate(d.getDate()+(m[1]==="heute"?0:m[1]==="morgen"?1:2));rest=rest.replace(m[0]," ");}
+  else if((m=rest.match(/ (?:am |den |bis )?(\d{1,2})\.? (januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)(?: (\d{4}))? /))){
+    var mi=MON.indexOf(m[2]==="maerz"?"märz":m[2]);noYear=!m[3];d=new Date(m[3]?+m[3]:now.getFullYear(),mi,+m[1]);rest=rest.replace(m[0]," ");}
+  else if((m=rest.match(/ (?:am |den )?(\d{1,2})\.(\d{1,2})\.?(\d{4}|\d{2})? /))){
+    noYear=!m[3];var yy=m[3]?(m[3].length===2?2000+(+m[3]):+m[3]):now.getFullYear();d=new Date(yy,+m[2]-1,+m[1]);rest=rest.replace(m[0]," ");}
+  else if((m=rest.match(/ (?:am |nächsten |nächste |kommenden )+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag) /))){
+    var diff=(DL.indexOf(m[1])-((now.getDay()+6)%7)+7)%7;if(diff===0)diff=7;d=new Date(t0);d.setDate(d.getDate()+diff);rest=rest.replace(m[0]," ");}
+  if(!d||isNaN(d.getTime()))return null;
+  var hh=9,mm=0,tm=rest.match(/ (?:um |ab )?(\d{1,2})(?:[:.](\d{2}))? uhr(?: (\d{2}))? /);
+  if(tm){hh=+tm[1];mm=tm[2]?+tm[2]:(tm[3]?+tm[3]:0);hasTime=true;rest=rest.replace(tm[0]," ");}
+  d.setHours(hh,mm,0,0);
+  if(noYear&&d.getTime()<t0.getTime())d.setFullYear(d.getFullYear()+1);
+  var name=rest.replace(/\b(am|den|um|für|bis|zum|zur|termin|ein|hinzu|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^(?:das|der|die|ein|eine)\s+/,"");
+  return {ts:d.getTime(),name:name,hasTime:hasTime};
+}
+function localIntent(t,lc){
+  var N=S.cfg.name,m,tg=null,item="";
+  var q=lc.replace(/\bto[\s-]?do\b/g,"todo").replace(/\b(bitte|doch|mal|kannst du|könntest du|könnten sie|würdest du)\b/g," ").replace(/\s+/g," ").trim();
+  var TL="(?:todo|aufgaben)[\\s-]*(?:liste|list)",MP="(?:monatsplan|kalender|terminplan)",NT="notizen?(?:[\\s-]*liste)?";
+  var T="("+TL+"|"+MP+"|"+NT+")",vb="(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|pack|tu|leg|erstelle)",pr="(?:in|auf|zu|zur|zum|bei|im)",ar="(?:die|der|den|das|dem|meine|meiner|meinen|deine|ihre)?";
+  /* Vorlesen: "was steht auf der To-Do-Liste", "lies meine Liste vor" */
+  if(/^(?:was|welche|zeig|lies|sag|wie)\b/.test(q)){
+    if(/wochenplan/.test(q)){doReport();return true;}
+    if(new RegExp(TL).test(q)){var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});say(ot.length?"Auf deiner To-Do-Liste steht: "+ot.join(", ")+".":"Deine To-Do-Liste ist leer, "+N+".");return true;}
+    if(new RegExp(MP).test(q)){var ev=S.events.filter(function(e){return e.target>=Date.now()-36e5;}).slice(0,5).map(function(e){return e.name+", "+left(e.target);});say(ev.length?"Im Monatsplan steht: "+ev.join("; ")+".":"Im Monatsplan sind keine Termine, "+N+".");return true;}
+    return false;
+  }
+  var re=new RegExp("^(?:"+vb+"\\s+)?"+pr+"\\s+"+ar+"\\s*"+T+"\\s+(.+?)(?:\\s+(?:ein|hinzu|rein))?$");
+  if((m=q.match(re))){tg=m[1];item=m[2];}
+  else{re=new RegExp("^(?:"+vb+"\\s+)?(.+?)\\s+"+pr+"\\s+"+ar+"\\s*"+T+"(?:\\s+.*)?$");
+    if((m=q.match(re))){item=m[1];tg=m[2];}}
+  if(!tg){
+    if((m=q.match(/^(?:todo|aufgabe)\s*:?\s*(.+)$/))){tg="todo-liste";item=m[1];}
+    else if((m=q.match(/^termin\s+(.+)$/))){tg="monatsplan";item=m[1];}
+    else return false;
+  }
+  item=item.replace(/^(?:ein|hinzu)\s+/,"").replace(/\s+(?:ein|hinzu|rein)$/,"").trim();
+  if(!item)return false;
+  if(new RegExp("^"+TL+"$").test(tg)||tg==="todo-liste"){S.todos.push({t:cap(item),done:false});save();render();say(cap(item)+" steht jetzt auf deiner To-Do-Liste, "+N+".");return true;}
+  if(new RegExp("^"+NT+"$").test(tg)){S.notes.push(cap(item));save();render();say("Notiz gespeichert, "+N+".");return true;}
+  var w=parseWhen(item);
+  if(!w||!w.name){say("Zu welchem Datum, "+N+"? Sag zum Beispiel: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");return true;}
+  S.events.push({name:cap(w.name),target:w.ts});save();render();
+  var dd=new Date(w.ts);
+  say(cap(w.name)+" ist am "+dd.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(w.hasTime?" um "+dd.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr":"")+" im Monatsplan eingetragen, "+N+".");
+  return true;
+}
+/* Nur bei Fragen zu Aktuellem/Fakten braucht Gemini die Internetsuche */
+function needsSearch(lc){return /(wetter|nachricht|news|aktuell|neueste|gestern|ergebnis|spielstand|gewonnen|verloren|bundesliga|champions|tabelle|aktie|börse|\bkurs\b|preis|wer ist|wer war|wann|wo gibt|öffnungszeit|passiert|los ist|letzte|\b20\d\d\b)/.test(lc);}
+
 async function handle(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
   log(t,"me");
@@ -616,6 +671,7 @@ async function handle(raw){
   if(/wie\s?viel uhr|wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
   if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
+  if(localIntent(t,lc))return;
   var dn="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)",vb="(?:trag|trage|füge|fuege|setze|schreib)";
   function addDay(dw,txt){
     txt=txt.replace(/\s+(?:ein|hinzu|eintragen)$/,"").trim();if(!txt)return false;
@@ -636,6 +692,9 @@ async function handle(raw){
     return say(cap(m[1])+" als Gewohnheit "+(hd?"für "+hd:"für jeden Tag")+" gespeichert, "+N+".");
   }
   if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){S.notes.push(cap(m[1]));save();render();return say("Notiz gespeichert.");}
+  /* Eintrags-Wünsche, die nicht verstanden wurden, gehen NICHT ans Internet (sonst behauptet Gemini fälschlich, es sei eingetragen) */
+  if(/\b(eintragen|eintrag|trag|trage|füge|fuege|hinzufügen|hinzu|speicher\w*|notier\w*|lösch\w*|entfern\w*|abhaken)\b|\b(to[\s-]?do|monatsplan|wochenplan|aufgabenliste)\b/.test(lc))
+    return say("Das habe ich nicht verstanden, "+N+". Sag zum Beispiel: Trage Milch in die To-Do-Liste ein. Oder: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");
   return askChat(t);
 }
 $("f").onsubmit=function(ev){ev.preventDefault();ensureAC();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
