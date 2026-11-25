@@ -190,7 +190,9 @@ function fix(){
   if(/gemini-2\.[05]/.test(S.cfg.gmodel))S.cfg.gmodel=DEF.gmodel;
   if(/gemini-2\.[05]/.test(S.cfg.gtts))S.cfg.gtts=DEF.gtts;
   if(!S.week||S.week.length!==7)S.week=[[],[],[],[],[],[],[]];
-  S.week=S.week.map(function(d){return (d||[]).map(function(x){return typeof x==="string"?{t:x,done:false}:x;});});
+  S.week=S.week.map(function(d){return (d||[]).map(function(x){return typeof x==="string"?{t:x,done:false}:x;}).filter(function(x){return !x.done;}).map(function(x){x.time=x.time||"";x.id=x.id||uid();return x;});});
+  S.todos=S.todos.filter(function(x){return !x.done;});
+  S.events=S.events.filter(function(x){return !x.done;});
   if(S.countdown){S.events.push({name:S.countdown.name,target:S.countdown.target});S.countdown=null;}
   S.lastBrief=S.lastBrief||"";
 }
@@ -221,8 +223,17 @@ function checkDailyReset(){
 }
 checkDailyReset();
 
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function p2(n){return n<10?"0"+n:""+n;}
+function hkey(i,h){return wk0()+"|"+i+"|"+h.name+"|"+(h.time||"");}
+/* Termine: 2 Stunden nach dem Zeitpunkt (ohne Uhrzeit: nach dem Tag) verschwinden sie */
+function purgeEvents(){var n=Date.now(),b=S.events.length;S.events=S.events.filter(function(e){return e.target+(e.allDay?864e5:72e5)>n;});if(S.events.length!==b){save();return true;}return false;}
+purgeEvents();
+function evLeft(e){if(e.allDay){var t0=new Date();t0.setHours(0,0,0,0);var d=Math.round((e.target-t0.getTime())/864e5);return d<=0?"heute":d===1?"morgen":"in "+d+" Tagen";}return left(e.target);}
+function evWhen(e){return e.allDay?new Date(e.target).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"}):fdt(e.target);}
+
 /* ---------- Listen-Darstellung ---------- */
-var openD={},editEv=-1;
+var openD={},openSub={},editEv=-1;
 openD[(new Date().getDay()+6)%7]=true;
 
 function row(t,done,cb){
@@ -230,39 +241,86 @@ function row(t,done,cb){
   c.onchange=function(){cb(c.checked);};
   li.appendChild(c);li.appendChild(mk("span",t,"tx"));return li;
 }
+/* abgehakt: kurz durchgestrichen, dann verschwindet der Eintrag */
+function removeLater(arr,obj){setTimeout(function(){if(obj.done){var k=arr.indexOf(obj);if(k>-1)arr.splice(k,1);save();render();}},1400);}
+function sortDay(i){
+  var a=S.week[i].map(function(e,k){return [e,k];});
+  a.sort(function(x,y){var tx=x[0].time,ty=y[0].time;if(tx&&ty)return tx<ty?-1:tx>ty?1:x[1]-y[1];if(tx)return -1;if(ty)return 1;return x[1]-y[1];});
+  S.week[i]=a.map(function(p){return p[0];});
+}
+function addWeek(i,text,time,hab){
+  text=cap(text);
+  if(hab){S.habits.push({name:text,day:DAYS[i],time:time||""});}
+  else{S.week[i].push({t:text,time:time||"",done:false,id:uid()});sortDay(i);}
+  openD[i]=true;save();render();
+}
 function moveEntry(from,j,to){
   if(from===to)return;var e=S.week[from].splice(j,1)[0];
-  if(e){S.week[to].push(e);openD[to]=true;}save();render();
+  if(e){S.week[to].push(e);sortDay(to);openD[to]=true;}save();render();
 }
 function renderWeek(){
-  var w=$("wk");w.innerHTML="";var td=(new Date().getDay()+6)%7,k0=wk0();
+  var w=$("wk");w.innerHTML="";var td=(new Date().getDay()+6)%7;
   DAYS.forEach(function(d,i){
     var c=mk("details",null,"day"+(i===td?" today":""));c.open=!!openD[i];
     c.ontoggle=function(){openD[i]=c.open;};
     c.ondragover=function(e){e.preventDefault();};
     c.ondrop=function(e){e.preventDefault();var p=(e.dataTransfer.getData("text/plain")||"").split("|");if(p.length===2)moveEntry(+p[0],+p[1],i);};
     c.appendChild(mk("summary",d+(i===td?" (Heute)":"")));
+    var items=[];
+    S.habits.forEach(function(h){if(h.day&&h.day!==d)return;items.push({k:"h",h:h,time:h.time||"",text:h.name});});
+    S.week[i].forEach(function(e,j){items.push({k:"e",e:e,j:j,time:e.time||"",text:e.t});});
+    items.forEach(function(x,n){x.n=n;});
+    items.sort(function(a,b){if(a.time&&b.time)return a.time<b.time?-1:a.time>b.time?1:a.n-b.n;if(a.time)return -1;if(b.time)return 1;return a.n-b.n;});
     var ul=mk("ul");
-    S.habits.forEach(function(h){
-      if(h.day&&h.day!==d)return;
-      var key=k0+"|"+i+"|"+h.name;
-      ul.appendChild(row(h.name,!!S.hdone[key],function(v){if(v)S.hdone[key]=true;else delete S.hdone[key];save();render();}));
-    });
-    S.week[i].forEach(function(e,j){
-      var li=row(e.t,e.done,function(v){e.done=v;save();render();});
-      li.draggable=true;
-      li.ondragstart=function(ev){ev.dataTransfer.setData("text/plain",i+"|"+j);};
-      var mv=mk("button","⇄","x");mv.title="Auf anderen Tag verschieben";
-      mv.onclick=function(){
-        var sel=mk("select");sel.style.flex="0 0 125px";
-        sel.appendChild(Object.assign(mk("option","Verschieben nach …"),{value:""}));
-        DAYS.forEach(function(dd,k){if(k!==i)sel.appendChild(Object.assign(mk("option",dd),{value:String(k)}));});
-        sel.onchange=function(){if(sel.value!=="")moveEntry(i,j,+sel.value);};
-        sel.onblur=function(){render();};
-        li.replaceChild(sel,mv);sel.focus();
+    items.forEach(function(it){
+      var isH=it.k==="h",key=isH?"h|"+hkey(i,it.h):"e|"+it.e.id;
+      var done=isH?!!S.hdone[hkey(i,it.h)]:!!it.e.done;
+      var li=mk("li",null,"ed"+(done?" dn":""));
+      var arr=mk("button",openSub[key]?"▾":"▸","x");arr.title="Gewohnheit (jede Woche)";
+      arr.onclick=function(){openSub[key]=!openSub[key];render();};
+      var cb=mk("input");cb.type="checkbox";cb.checked=done;
+      cb.onchange=function(){
+        if(isH){var hk=hkey(i,it.h);if(cb.checked)S.hdone[hk]=true;else delete S.hdone[hk];save();render();}
+        else{it.e.done=cb.checked;save();render();if(cb.checked)removeLater(S.week[i],it.e);}
       };
-      var x=mk("button","×","x");x.onclick=function(){S.week[i].splice(j,1);save();render();};
-      li.appendChild(mv);li.appendChild(x);ul.appendChild(li);
+      li.appendChild(arr);li.appendChild(cb);
+      li.appendChild(mk("span",(it.time?it.time+" ":"")+it.text,"tx"));
+      if(!isH){
+        li.draggable=true;
+        li.ondragstart=function(ev){ev.dataTransfer.setData("text/plain",i+"|"+it.j);};
+        var mv=mk("button","⇄","x");mv.title="Auf anderen Tag verschieben";
+        mv.onclick=function(){
+          var sel=mk("select");sel.style.flex="0 0 125px";
+          sel.appendChild(Object.assign(mk("option","Verschieben nach …"),{value:""}));
+          DAYS.forEach(function(dd,k){if(k!==i)sel.appendChild(Object.assign(mk("option",dd),{value:String(k)}));});
+          sel.onchange=function(){if(sel.value!=="")moveEntry(i,it.j,+sel.value);};
+          sel.onblur=function(){render();};
+          li.replaceChild(sel,mv);sel.focus();
+        };
+        li.appendChild(mv);
+      }
+      var x=mk("button","×","x");
+      x.onclick=function(){if(isH){var hi=S.habits.indexOf(it.h);if(hi>-1)S.habits.splice(hi,1);}else{var ei=S.week[i].indexOf(it.e);if(ei>-1)S.week[i].splice(ei,1);}save();render();};
+      li.appendChild(x);
+      if(openSub[key]){
+        var sp=mk("div",null,"sub");sp.style.cssText="flex:0 0 100%;display:flex;align-items:center;gap:8px;padding:4px 0 2px 28px;color:var(--dim);font-size:15px";
+        var hc=mk("input");hc.type="checkbox";hc.checked=isH;hc.style.cssText="flex:0 0 auto;width:20px;height:20px";
+        hc.onchange=function(){
+          if(!isH&&hc.checked){
+            var e0=it.e;S.week[i].splice(S.week[i].indexOf(e0),1);
+            var nh={name:e0.t,day:DAYS[i],time:e0.time||""};S.habits.push(nh);
+            delete openSub[key];openSub["h|"+hkey(i,nh)]=true;
+          }else if(isH&&!hc.checked){
+            S.habits.splice(S.habits.indexOf(it.h),1);
+            var ne={t:it.h.name,time:it.h.time||"",done:false,id:uid()};S.week[i].push(ne);sortDay(i);
+            delete openSub[key];openSub["e|"+ne.id]=true;
+          }
+          save();render();
+        };
+        sp.appendChild(hc);sp.appendChild(document.createTextNode("Gewohnheit – steht jede Woche an diesem Tag im Plan"));
+        li.appendChild(sp);
+      }
+      ul.appendChild(li);
     });
     if(!ul.children.length)ul.appendChild(mk("li","Keine Einträge","empty"));
     c.appendChild(ul);w.appendChild(c);
@@ -271,7 +329,7 @@ function renderWeek(){
 function renderTodos(){
   var u=$("ul-td");u.innerHTML="";
   S.todos.forEach(function(t,i){
-    var li=row(t.t,t.done,function(v){t.done=v;save();render();});
+    var li=row(t.t,t.done,function(v){t.done=v;save();render();if(v)removeLater(S.todos,t);});
     var x=mk("button","×","x");x.onclick=function(){S.todos.splice(i,1);save();render();};
     li.appendChild(x);u.appendChild(li);
   });
@@ -287,12 +345,11 @@ function renderEv(){
       var n=mk("input");n.value=e.name;n.style.flex="1 1 120px";
       var t=mk("input");t.type="datetime-local";t.value=lcl(e.target);t.style.flex="1 1 150px";
       var ok=mk("button","✓","go"),no=mk("button","✕","sec");
-      ok.onclick=function(){var nv=n.value.trim(),tv=t.value;if(!nv||!tv)return;e.name=cap(nv);e.target=new Date(tv).getTime();editEv=-1;save();render();};
+      ok.onclick=function(){var nv=n.value.trim(),tv=t.value;if(!nv||!tv)return;e.name=cap(nv);e.target=new Date(tv).getTime();e.allDay=(tv.slice(11)==="00:00");editEv=-1;save();render();};
       no.onclick=function(){editEv=-1;render();};
       li.appendChild(n);li.appendChild(t);li.appendChild(ok);li.appendChild(no);
     }else{
-      li=mk("li");
-      li.appendChild(mk("span",e.name+" – "+fdt(e.target)+" · "+left(e.target),"tx"));
+      li=row(e.name+" – "+evWhen(e)+" · "+evLeft(e),!!e.done,function(v){e.done=v;save();render();if(v)removeLater(S.events,e);});
       var ed=mk("button","✎","x");ed.title="Bearbeiten";ed.onclick=function(){editEv=i;render();};
       var x=mk("button","×","x");x.onclick=function(){S.events.splice(i,1);save();render();};
       li.appendChild(ed);li.appendChild(x);
@@ -318,7 +375,7 @@ function render(){
 (function(){
   var sel=$("wkd"),td=(new Date().getDay()+6)%7;
   DAYS.forEach(function(d,i){sel.appendChild(Object.assign(mk("option",d),{value:String(i)}));});sel.value=String(td);
-  $("wkf").onsubmit=function(e){e.preventDefault();var v=$("wki").value.trim();if(!v)return;var i=+sel.value;S.week[i].push({t:cap(v),done:false});openD[i]=true;$("wki").value="";save();render();};
+  $("wkf").onsubmit=function(e){e.preventDefault();var v=$("wki").value.trim();if(!v)return;var i=+sel.value;addWeek(i,v,"",false);$("wki").value="";};
   $("tdf").onsubmit=function(e){e.preventDefault();var v=$("tdi").value.trim();if(!v)return;S.todos.push({t:cap(v),done:false});$("tdi").value="";save();render();};
   $("tdclr").onclick=function(){S.todos=S.todos.filter(function(t){return !t.done;});save();render();};
   $("cdf").onsubmit=function(e){e.preventDefault();var name=$("cdname").value.trim(),time=$("cdtime").value;if(!name||!time)return;S.events.push({name:cap(name),target:new Date(time).getTime()});$("cdname").value="";$("cdtime").value="";save();render();};
@@ -341,7 +398,8 @@ $("cb").onclick=function(){var s=$("ce").value.replace(/,/g,".");if(!/^[0-9+\-*\
 function pc(){var p=parseFloat($("p1").value),v=parseFloat($("p2").value);$("pr").textContent=(isNaN(p)||isNaN(v))?"":(p+" % von "+v+" = "+(Math.round(p*v)/100).toString().replace(".",","));}
 $("p1").oninput=pc;$("p2").oninput=pc;
 var tInt=null,tEnd=0,tLab="";
-function tick(){var l=Math.max(0,tEnd-Date.now()),s=Math.round(l/1000);$("tdisp").textContent=("0"+Math.floor(s/60)).slice(-2)+":"+("0"+(s%60)).slice(-2);if(l<=0){clearInterval(tInt);tInt=null;say("Timer"+(tLab?" "+tLab:"")+" ist abgelaufen, "+S.cfg.name+".");}}
+function tick(){var l=Math.max(0,tEnd-Date.now()),s=Math.round(l/1000);$("tdisp").textContent=p2(Math.floor(s/60))+":"+p2(s%60);if(l<=0){clearInterval(tInt);tInt=null;beep();say("Timer"+(tLab?" "+tLab:"")+" ist abgelaufen, "+S.cfg.name+".");}}
+function beep(){try{ensureAC();if(!ac||ac.state!=="running")return;[0,.35,.7].forEach(function(dl){var o=ac.createOscillator(),g=ac.createGain();o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(ac.destination);o.start(ac.currentTime+dl);o.stop(ac.currentTime+dl+.2);});}catch(e){}}
 function startTimer(m,lab){if(!(m>0))return false;tLab=lab||"";tEnd=Date.now()+m*60000;clearInterval(tInt);tInt=setInterval(tick,500);tick();return true;}
 $("tgo").onclick=function(){startTimer(parseFloat($("tmin").value),$("tlab").value.trim());};
 $("tstop").onclick=function(){clearInterval(tInt);tInt=null;$("tdisp").textContent="00:00";};
@@ -457,7 +515,7 @@ function trigWords(){return S.cfg.cmds.map(function(c){return c.w;}).concat(["la
 function onSpeech(t){
   if(speaking()||state==="think")return; /* nicht auf die eigene Stimme hören */
   var lc=t.toLowerCase();
-  if(Date.now()<convoUntil){handle(t);return;} /* offenes Gespräch: kein Aktivierungswort nötig */
+  if(Date.now()<convoUntil){if(intentional(lc))handle(t);return;} /* offenes Gespräch: kein Aktivierungswort nötig */
   if(trigWords().some(function(w){return w&&lc.indexOf(w)!==-1;})){handle(t);return;}
   var ws=wakeWords();
   if(!ws.length){handle(t);return;}
@@ -549,16 +607,16 @@ async function ask(q,o){
 /* ---------- Lagebericht (heute) & Update (Nachrichten) ---------- */
 function reportText(){
   var d=new Date(),td=(d.getDay()+6)%7,k0=wk0(),todo=[],dn=0,p=[];
-  S.habits.forEach(function(h){if(h.day&&h.day!==DAYS[td])return;if(S.hdone[k0+"|"+td+"|"+h.name])dn++;else todo.push(h.name);});
-  S.week[td].forEach(function(e){if(e.done)dn++;else todo.push(e.t);});
+  S.habits.forEach(function(h){if(h.day&&h.day!==DAYS[td])return;if(S.hdone[hkey(td,h)])dn++;else todo.push((h.time?h.time+" ":"")+h.name);});
+  S.week[td].forEach(function(e){if(e.done)dn++;else todo.push((e.time?e.time+" ":"")+e.t);});
   p.push(todo.length?"Heute steht an: "+todo.join(", ")+(dn?" ("+dn+" schon erledigt)":"")+".":(dn?"Heute ist im Wochenplan alles erledigt.":"Heute steht nichts im Wochenplan."));
   var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});
   p.push(ot.length?"Offene To-Dos: "+ot.join(", ")+".":"Keine offenen To-Dos.");
   var a=new Date(d);a.setHours(0,0,0,0);var s0=a.getTime(),s1=s0+864e5;
-  var today=S.events.filter(function(e){return e.target>=s0&&e.target<s1;}).map(function(e){return e.name+" um "+new Date(e.target).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr";});
+  var today=S.events.filter(function(e){return e.target>=s0&&e.target<s1;}).map(function(e){return e.name+(e.allDay?"":" um "+new Date(e.target).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr");});
   if(today.length)p.push("Termine heute: "+today.join(", ")+".");
   var nx=S.events.filter(function(e){return e.target>=s1;}).sort(function(x,y){return x.target-y.target;})[0];
-  if(nx)p.push("Als Nächstes: "+nx.name+", "+left(nx.target)+".");
+  if(nx)p.push("Als Nächstes: "+nx.name+", "+evLeft(nx)+".");
   if(S.notes.length)p.push("Notizen: "+S.notes.slice(0,3).join(", ")+".");
   return p.join("\n");
 }
@@ -620,44 +678,96 @@ function parseWhen(txt){
   else if((m=rest.match(/ (?:am |nächsten |nächste |kommenden )+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag) /))){
     var diff=(DL.indexOf(m[1])-((now.getDay()+6)%7)+7)%7;if(diff===0)diff=7;d=new Date(t0);d.setDate(d.getDate()+diff);rest=rest.replace(m[0]," ");}
   if(!d||isNaN(d.getTime()))return null;
-  var hh=9,mm=0,tm=rest.match(/ (?:um |ab )?(\d{1,2})(?:[:.](\d{2}))? uhr(?: (\d{2}))? /);
+  var hh=0,mm=0,tm=rest.match(/ (?:um |ab )?(\d{1,2})(?:[:.](\d{2}))? uhr(?: (\d{2}))? /);
   if(tm){hh=+tm[1];mm=tm[2]?+tm[2]:(tm[3]?+tm[3]:0);hasTime=true;rest=rest.replace(tm[0]," ");}
   d.setHours(hh,mm,0,0);
   if(noYear&&d.getTime()<t0.getTime())d.setFullYear(d.getFullYear()+1);
   var name=rest.replace(/\b(am|den|um|für|bis|zum|zur|termin|ein|hinzu|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^(?:das|der|die|ein|eine)\s+/,"");
   return {ts:d.getTime(),name:name,hasTime:hasTime};
 }
+var WD="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)";
+function listTarget(q){
+  if(/wochenplan|wochenliste|wochenübersicht|wochenuebersicht/.test(q))return "W";
+  if(/monatsplan|monatsliste|monatskalender|kalender|terminplan/.test(q))return "M";
+  if(/\btodo\b|aufgabenliste|aufgaben liste/.test(q))return "T";
+  if(/notizblock|notizenblock|notizbuch|notizen|\bnotiz\b/.test(q))return "N";
+  return null;
+}
+var TPH=/(?:\b(?:in|auf|zu|zur|zum|im|ins|bei|unter)\s+)?(?:\b(?:die|der|den|das|dem|meine|meiner|meinen|meinem|mein|deine|ihre)\s+)?\b(?:wochenplan|wochenliste|wochenübersicht|wochenuebersicht|monatsplan|monatsliste|monatskalender|kalender|terminplan|todo[\s-]*liste|todo|aufgabenliste|aufgaben liste|notizblock|notizenblock|notizbuch|notizen|notiz)\b/g;
+var STOPV=/\b(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|packe|pack|mache|mach|tue|tu|lege|leg|erstelle|nimm)\b/g;
+var FILL=/\b(?:bitte|doch|mal|das|dies|dieses|mir|kannst du|könntest du|würdest du|jarvis)\b/g;
+function rc(text,orig){var mp={};String(orig).split(/\s+/).forEach(function(w){var k=w.replace(/[.,!?;:]/g,"");if(k)mp[k.toLowerCase()]=k;});return text.split(" ").map(function(w){return mp[w]||w;}).join(" ");}
+function cleanName(r){return r.replace(/\b(?:am|den|um|für|bis|zum|zur|ein|hinzu|rein|dazu|drauf|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^(?:das|der|die|ein|eine)\s+/,"");}
 function localIntent(t,lc){
-  var N=S.cfg.name,m,tg=null,item="";
-  var q=lc.replace(/\bto[\s-]?do\b/g,"todo").replace(/\b(bitte|doch|mal|kannst du|könntest du|könnten sie|würdest du)\b/g," ").replace(/\s+/g," ").trim();
-  var TL="(?:todo|aufgaben)[\\s-]*(?:liste|list)",MP="(?:monatsplan|kalender|terminplan)",NT="notizen?(?:[\\s-]*liste)?";
-  var T="("+TL+"|"+MP+"|"+NT+")",vb="(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|pack|tu|leg|erstelle)",pr="(?:in|auf|zu|zur|zum|bei|im)",ar="(?:die|der|den|das|dem|meine|meiner|meinen|deine|ihre)?";
-  /* Vorlesen: "was steht auf der To-Do-Liste", "lies meine Liste vor" */
-  if(/^(?:was|welche|zeig|lies|sag|wie)\b/.test(q)){
-    if(/wochenplan/.test(q)){doReport();return true;}
-    if(new RegExp(TL).test(q)){var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});say(ot.length?"Auf deiner To-Do-Liste steht: "+ot.join(", ")+".":"Deine To-Do-Liste ist leer, "+N+".");return true;}
-    if(new RegExp(MP).test(q)){var ev=S.events.filter(function(e){return e.target>=Date.now()-36e5;}).slice(0,5).map(function(e){return e.name+", "+left(e.target);});say(ev.length?"Im Monatsplan steht: "+ev.join("; ")+".":"Im Monatsplan sind keine Termine, "+N+".");return true;}
-    return false;
+  var N=S.cfg.name,m;
+  var q=lc.replace(/\bto[\s-]?do\b/g,"todo").replace(/\s+/g," ").trim();
+  var tg=listTarget(q);
+  /* Vorlesen: "was steht auf der To-Do-Liste" */
+  if(tg&&/^(?:was|welche|zeig|lies|sag|wie)\b/.test(q)){
+    if(tg==="W"){doReport();return true;}
+    if(tg==="T"){var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});say(ot.length?"Auf deiner To-Do-Liste steht: "+ot.join(", ")+".":"Deine To-Do-Liste ist leer, "+N+".");return true;}
+    if(tg==="M"){var ev=S.events.slice(0,5).map(function(e){return e.name+", "+evLeft(e);});say(ev.length?"Im Monatsplan steht: "+ev.join("; ")+".":"Im Monatsplan sind keine Termine, "+N+".");return true;}
+    if(tg==="N"){say(S.notes.length?"In deinen Notizen steht: "+S.notes.slice(0,5).join(", ")+".":"Du hast keine Notizen, "+N+".");return true;}
   }
-  var re=new RegExp("^(?:"+vb+"\\s+)?"+pr+"\\s+"+ar+"\\s*"+T+"\\s+(.+?)(?:\\s+(?:ein|hinzu|rein))?$");
-  if((m=q.match(re))){tg=m[1];item=m[2];}
-  else{re=new RegExp("^(?:"+vb+"\\s+)?(.+?)\\s+"+pr+"\\s+"+ar+"\\s*"+T+"(?:\\s+.*)?$");
-    if((m=q.match(re))){item=m[1];tg=m[2];}}
+  if(tg&&/^(?:ist|sind|habe|hab|gibt|steht|stehen|wann|wo|warum)\b/.test(q))return false;
+  var wdm=q.match(new RegExp("\\b"+WD+"(?:s?[a-zäöüß]{3,})?\\b"));
+  var vbre=/^(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|pack|packe|mach|mache|tu|tue|leg|lege|erstelle|nimm)\b/;
   if(!tg){
-    if((m=q.match(/^(?:todo|aufgabe)\s*:?\s*(.+)$/))){tg="todo-liste";item=m[1];}
-    else if((m=q.match(/^termin\s+(.+)$/))){tg="monatsplan";item=m[1];}
+    if(wdm&&((new RegExp("^"+WD+"(?:s?[a-zäöüß]{3,})?\\b").test(q)&&q.split(" ").length<=8&&!/\?$/.test(q))||vbre.test(q)))tg="W";
+    else if(/^(?:todo|aufgabe)\b/.test(q))tg="T";
+    else if(/^termin\b/.test(q))tg="M";
+    else if(/^notiz\b/.test(q))tg="N";
     else return false;
   }
-  item=item.replace(/^(?:ein|hinzu)\s+/,"").replace(/\s+(?:ein|hinzu|rein)$/,"").trim();
-  if(!item)return false;
-  if(new RegExp("^"+TL+"$").test(tg)||tg==="todo-liste"){S.todos.push({t:cap(item),done:false});save();render();say(cap(item)+" steht jetzt auf deiner To-Do-Liste, "+N+".");return true;}
-  if(new RegExp("^"+NT+"$").test(tg)){S.notes.push(cap(item));save();render();say("Notiz gespeichert, "+N+".");return true;}
-  var w=parseWhen(item);
-  if(!w||!w.name){say("Zu welchem Datum, "+N+"? Sag zum Beispiel: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");return true;}
-  S.events.push({name:cap(w.name),target:w.ts});save();render();
-  var dd=new Date(w.ts);
-  say(cap(w.name)+" ist am "+dd.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(w.hasTime?" um "+dd.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr":"")+" im Monatsplan eingetragen, "+N+".");
-  return true;
+  var rest=" "+q.replace(TPH," ").replace(STOPV," ").replace(FILL," ").replace(/^\s*(?:aufgabe|termin|notiz)\b\s*:?/," ")+" ";
+  if(tg==="W"){
+    var hab=false,time="",di=(new Date().getDay()+6)%7,mt;
+    var hre=/\b(?:jeden|jede woche|jede|wöchentlich|wöchentliche[rn]?|immer)\b/g;
+    if(hre.test(rest)){hab=true;rest=rest.replace(hre," ");}
+    if((mt=rest.match(/ (?:um |ab |gegen )?(\d{1,2})(?:[:.](\d{2}))? uhr(?: (\d{2}))? /))){time=p2(+mt[1])+":"+p2(mt[2]?+mt[2]:(mt[3]?+mt[3]:0));rest=rest.replace(mt[0]," ");}
+    else if((mt=rest.match(/ (?:um |ab |gegen )?(\d{1,2}):(\d{2}) /))){time=p2(+mt[1])+":"+p2(+mt[2]);rest=rest.replace(mt[0]," ");}
+    var wd2=rest.match(new RegExp("\\b"+WD+"\\b")),rel=rest.match(/\b(heute|übermorgen|morgen)\b/);
+    if(wd2){di=DL.indexOf(wd2[1]);rest=rest.replace(wd2[0]," ");}
+    else if(rel){var dd=new Date();dd.setDate(dd.getDate()+(rel[1]==="heute"?0:rel[1]==="morgen"?1:2));di=(dd.getDay()+6)%7;rest=rest.replace(rel[0]," ");}
+    else{var cm=rest.match(new RegExp("\\b"+WD+"s?(?=[a-zäöüß]{3,})"));if(cm)di=DL.indexOf(cm[1]);}
+    var text=rc(cleanName(rest),t);
+    if(!text){say("Was soll ich eintragen, "+N+"?");return true;}
+    addWeek(di,text,time,hab);
+    say(cap(text)+(hab?" ist als Gewohnheit für jeden "+DAYS[di]+(time?" um "+time+" Uhr":"")+" eingetragen, ":" steht am "+DAYS[di]+(time?" um "+time+" Uhr":"")+" im Wochenplan, ")+N+".");
+    return true;
+  }
+  if(tg==="M"){
+    var w=parseWhen(rest);if(w&&w.name)w.name=rc(w.name,t);
+    if(!w||!w.name){say("Zu welchem Datum, "+N+"? Sag zum Beispiel: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");return true;}
+    S.events.push({name:cap(w.name),target:w.ts,allDay:!w.hasTime});save();render();
+    var d2=new Date(w.ts);
+    say(cap(w.name)+" ist am "+d2.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(w.hasTime?" um "+d2.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr":"")+" im Monatsplan eingetragen, "+N+".");
+    return true;
+  }
+  var item=rc(cleanName(rest),t);
+  if(!item){say("Was soll ich eintragen, "+N+"?");return true;}
+  if(tg==="T"){S.todos.push({t:cap(item),done:false});save();render();say(cap(item)+" steht jetzt auf deiner To-Do-Liste, "+N+".");return true;}
+  S.notes.push(cap(item));save();render();say("Notiz gespeichert, "+N+".");return true;
+}
+/* Timer: "stell einen Timer auf 10 Minuten", "Timer für zehn Minuten Pizza" */
+function durTxt(min){if(min<1)return Math.round(min*60)+" Sekunden";if(min>=60&&min%60===0)return (min/60)+(min===60?" Stunde":" Stunden");return (Math.round(min*10)/10).toString().replace(".",",")+(min===1?" Minute":" Minuten");}
+function parseTimer(q){
+  if(!/\b(timer|wecker|stoppuhr)\b/.test(q))return null;
+  var NUM={ein:1,eine:1,einen:1,einer:1,zwei:2,drei:3,vier:4,fünf:5,fuenf:5,sechs:6,sieben:7,acht:8,neun:9,zehn:10,elf:11,zwölf:12,fünfzehn:15,zwanzig:20,fünfundzwanzig:25,dreißig:30,dreissig:30,vierzig:40,fünfundvierzig:45,fünfzig:50,sechzig:60};
+  var min=0,m,expr="";
+  if((m=q.match(/halbe stunde|halbstunde/))){min=30;expr=m[0];}
+  else if((m=q.match(/dreiviertel ?stunde/))){min=45;expr=m[0];}
+  else if((m=q.match(/viertel ?stunde/))){min=15;expr=m[0];}
+  else if((m=q.match(/(\d+(?:[.,]\d+)?)\s*(stunden?|std|minuten?|min|sekunden?|sek)\b/))){var n=parseFloat(m[1].replace(",","."));min=/^st/.test(m[2])?n*60:/^m/.test(m[2])?n:n/60;expr=m[0];}
+  else if((m=q.match(/\b([a-zäöüß]+)\s+(stunden?|minuten?|sekunden?)\b/))&&NUM[m[1]]!=null){var n2=NUM[m[1]];min=/^st/.test(m[2])?n2*60:/^mi/.test(m[2])?n2:n2/60;expr=m[0];}
+  var label=q.replace(expr," ").replace(/\b(?:stell|stelle|starte|mach|mache|setze|bitte|mir|mich|einen|eine|ein|timer|wecker|stoppuhr|auf|für|von|in|nach|jarvis|kannst|du)\b/g," ").replace(/\s+/g," ").trim();
+  return {min:min,label:label};
+}
+function isQuestion(q){return /^(?:wer|wie|was|wo|wann|warum|wieso|weshalb|welche[rsmn]?|wieviel|woher|wohin|wozu|kannst|kann|könnte|könntest|ist|sind|hat|haben|gibt|stimmt|erkläre|erklär|erzähl|erzähle|nenne|sag|such|suche|finde|übersetze|rechne|berechne|zeig|hilf|empfiehl|gib|lies)\b/.test(q);}
+/* Im offenen Gespräch Nebengeräusche ignorieren: nur Absichtliches weiterverarbeiten */
+function intentional(lc){
+  var q=lc.replace(/\bto[\s-]?do\b/g,"todo");
+  return /(todo|wochenplan|wochenliste|monatsplan|monatsliste|kalender|notizblock|notizen|timer|wecker|stoppuhr|lagebericht|update)/.test(q)||/^(?:trag|trage|füge|fuege|schreib|schreibe|stell|stelle|setze|notiere|erinner|gewohnheit|notiz|aufgabe|termin|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b/.test(q)||isQuestion(q)||needsSearch(q)||S.cfg.cmds.some(function(c){return c.w&&q.indexOf(c.w)!==-1;});
 }
 /* Nur bei Fragen zu Aktuellem/Fakten braucht Gemini die Internetsuche */
 function needsSearch(lc){return /(wetter|nachricht|news|aktuell|neueste|gestern|ergebnis|spielstand|gewonnen|verloren|bundesliga|champions|tabelle|aktie|börse|\bkurs\b|preis|wer ist|wer war|wann|wo gibt|öffnungszeit|passiert|los ist|letzte|\b20\d\d\b)/.test(lc);}
@@ -671,18 +781,23 @@ async function handle(raw){
   if(/wie\s?viel uhr|wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
   if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
+  var tmr=parseTimer(lc);
+  if(tmr){
+    if(!tmr.min){say("Wie viele Minuten soll der Timer laufen, "+N+"?");return;}
+    startTimer(tmr.min,tmr.label);say("Timer"+(tmr.label?" "+tmr.label:"")+" für "+durTxt(tmr.min)+" läuft, "+N+".");return;
+  }
   if(localIntent(t,lc))return;
   var dn="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)",vb="(?:trag|trage|füge|fuege|setze|schreib)";
   function addDay(dw,txt){
     txt=txt.replace(/\s+(?:ein|hinzu|eintragen)$/,"").trim();if(!txt)return false;
-    var di=DL.indexOf(dw);S.week[di].push({t:cap(txt),done:false});openD[di]=true;save();render();
+    var di=DL.indexOf(dw);addWeek(di,txt,"",false);
     say(cap(txt)+" für "+DAYS[di]+" eingetragen, "+N+".");return true;
   }
   if((m=lc.match(new RegExp("^"+dn+"\\s+(.+)$")))&&m[2].split(/\s+/).length<=5&&!/\?$/.test(lc)){if(addDay(m[1],m[2]))return;}
   if((m=lc.match(new RegExp("^"+vb+"\\s+"+dn+"\\s+(.+)$")))){if(addDay(m[1],m[2]))return;}
   if((m=lc.match(new RegExp("^"+vb+"\\s+(.+?)\\s+"+dn+"(?:\\s+(?:ein|hinzu))?$")))){if(addDay(m[2],m[1]))return;}
   if((m=lc.match(/(?:füge|trage|setze)\s+(.+?)\s+(?:am|für|für den)\s+(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)/))){
-    var dIdx=DL.indexOf(m[2]);S.week[dIdx].push({t:cap(m[1]),done:false});openD[dIdx]=true;save();render();
+    var dIdx=DL.indexOf(m[2]);addWeek(dIdx,m[1],"",false);
     return say(cap(m[1])+" für "+DAYS[dIdx]+" eingetragen, "+N+".");
   }
   if((m=lc.match(/^(?:to-?do|aufgabe)\s*[:]?\s*(.+)$/))){S.todos.push({t:cap(m[1]),done:false});save();render();return say("Aufgabe gespeichert.");}
@@ -841,6 +956,7 @@ setInterval(function(){
   $("clock").textContent=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
   $("dat").textContent=d.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   checkDailyReset();
+  if(purgeEvents()&&editEv<0)render();
   if(tc%30===0&&editEv<0)renderEv();
   autoBrief();
 },1000);
@@ -852,3 +968,4 @@ autoBrief();
 </script>
 </body>
 </html>
+
