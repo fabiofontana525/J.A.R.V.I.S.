@@ -96,8 +96,16 @@ dialog::backdrop{background:#000c}
     <div id="log" aria-live="polite"></div>
     <form id="f">
       <input type="text" id="inp" placeholder="Befehl eingeben …" autocomplete="off" aria-label="Befehl eingeben">
+      <button class="sec" type="button" id="attbtn" aria-label="Kamera, Foto oder Datei" title="Kamera, Foto oder Datei">📎</button>
       <button class="go" type="submit">Senden</button>
     </form>
+    <div class="fr" id="attmenu" style="display:none">
+      <button class="sec" type="button" id="mcam">📷 Kamera</button>
+      <button class="sec" type="button" id="mfile">🖼 Bild / Datei hochladen</button>
+    </div>
+    <div class="hint" id="attbar" style="display:none;width:100%"></div>
+    <input type="file" id="fcam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="ffile" accept="image/*,application/pdf,.pdf,.txt,.md,.csv,.json,.html,.xml,text/*" hidden>
   </section>
 
   <div class="col" id="colw">
@@ -178,7 +186,7 @@ var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonnt
 var GBASE="https://generativelanguage.googleapis.com/v1beta/models/";
 var ACT={say:"Text sagen",lagebericht:"Lagebericht",update:"Update (Nachrichten)",ask:"Frage an Gemini",page:"Seite öffnen",timer:"Timer (Minuten)"};
 var PAGES={home:"Start",tools:"Rechner",timer:"Timer",info:"Übersicht",habits:"Gewohnheiten",notes:"Notizen"};
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,convo:45,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,convo:45,speak:true,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],todos:[],events:[],hdone:{},countdown:null,lastDay:"",lastBrief:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
@@ -476,17 +484,19 @@ function playBuf(f){return new Promise(function(res){
 });}
 function devSpeak(t){return new Promise(function(res){
   if(!("speechSynthesis" in window)){res();return;}
-  var done=false,tm=null;
+  var done=false,tm=null,started=false;
   function fin(){if(!done){done=true;clearTimeout(tm);res();}}
   var u=new SpeechSynthesisUtterance(t);spk.cur=u;
   u.lang=voice?voice.lang:"de-DE";if(voice)u.voice=voice;
   u.rate=S.cfg.rate;u.pitch=S.cfg.pitch||1;
-  u.onstart=function(){pendingSpeak=null;};u.onend=fin;u.onerror=fin;
+  u.onstart=function(){pendingSpeak=null;speechOK=true;started=true;};u.onend=fin;u.onerror=fin;
+  setTimeout(function(){if(!started&&!done&&S.cfg.speak!==false)$("status").textContent="Kein Ton? Stumm-Schalter und Lautstärke prüfen";},3000);
   tm=setTimeout(fin,Math.max(5000,t.length*110));
   var wait=Math.max(0,150-(Date.now()-spk.lastCancel));
   setTimeout(function(){try{if(speechSynthesis.paused)speechSynthesis.resume();speechSynthesis.speak(u);}catch(e){fin();}},wait);
 });}
 function enqueue(t,dev){
+  if(S.cfg.speak===false){spk.q=[];pump();return;} /* Sprachausgabe aus: nur Text */
   t=cleanTxt(t);if(!t)return;
   splitS(t).forEach(function(p){var it={t:p};if(!dev&&geminiOn())it.p=geminiAudio(p);spk.q.push(it);});
   pump();
@@ -536,11 +546,26 @@ function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecogniti
   rec.onerror=function(e){var er=e&&e.error;if(er==="not-allowed"||er==="service-not-allowed"){active=false;setState("off","Mikrofon nicht erlaubt – bitte in den Safari-Einstellungen erlauben");}};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
-function unlockAudio(){
-  if(unlocked)return;unlocked=true;
-  try{if("speechSynthesis" in window){var u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);}}catch(e){}
-  try{ensureAC();if(ac){var b=ac.createBuffer(1,1,22050),sr=ac.createBufferSource();sr.buffer=b;sr.connect(ac.destination);sr.start(0);}}catch(e){}
+var speechOK=false,silentEl=null;
+function silentWav(){
+  var n=4000,b=new Uint8Array(44+n),dv=new DataView(b.buffer);
+  function w(o,t){for(var i=0;i<t.length;i++)dv.setUint8(o+i,t.charCodeAt(i));}
+  w(0,"RIFF");dv.setUint32(4,36+n,true);w(8,"WAVE");w(12,"fmt ");dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+  dv.setUint32(24,8000,true);dv.setUint32(28,8000,true);dv.setUint16(32,1,true);dv.setUint16(34,8,true);w(36,"data");dv.setUint32(40,n,true);
+  for(var i=0;i<n;i++)b[44+i]=128;
+  var str="";for(i=0;i<b.length;i++)str+=String.fromCharCode(b[i]);
+  return "data:audio/wav;base64,"+btoa(str);
 }
+/* wird bei jeder Berührung versucht, bis die Sprachausgabe wirklich gestartet ist (iPhone/Safari braucht das) */
+function unlockAudio(){
+  try{if(S.cfg.speak!==false&&"speechSynthesis" in window&&!speechOK&&!speechSynthesis.speaking&&!speechSynthesis.pending){var u=new SpeechSynthesisUtterance("ok");u.volume=0;u.onstart=function(){speechOK=true;};speechSynthesis.speak(u);}}catch(e){}
+  try{ensureAC();if(ac&&!unlocked){var b=ac.createBuffer(1,1,22050),sr=ac.createBufferSource();sr.buffer=b;sr.connect(ac.destination);sr.start(0);}}catch(e){}
+  /* stiller Ton, damit die Ausgabe auch bei Stumm-Schalter als Medien-Ton läuft */
+  try{if(S.cfg.speak!==false){if(!silentEl){silentEl=new Audio(silentWav());silentEl.loop=true;silentEl.setAttribute("playsinline","");}if(silentEl.paused)silentEl.play().catch(function(){});}}catch(e){}
+  unlocked=true;
+}
+document.addEventListener("click",function(){unlockAudio();});
+document.addEventListener("touchend",function(){unlockAudio();});
 document.addEventListener("pointerdown",function(){
   var first=!unlocked;unlockAudio();ensureAC();activate();
   if(pendingSpeak){var pt=pendingSpeak;pendingSpeak=null;say(pt,{nolog:true});}
@@ -556,9 +581,13 @@ function errHint(st,msg){
 }
 async function ask(q,o){
   o=o||{};var key=gkey();lastErr="";if(!key){lastErr="Kein Schlüssel eingetragen";return null;}
+  var uparts=[];
+  if(o.file){var fl0=o.file;if(fl0.kind==="text")uparts.push({text:"Inhalt der Datei „"+fl0.name+"“:\n"+fl0.text});else uparts.push({inlineData:{mimeType:fl0.mime,data:fl0.data}});}
+  uparts.push({text:q});
   var sys="Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" (Deutschland). Du bist Jarvis, ein Sprachassistent. Nutze bei Fragen zu aktuellen Ereignissen, Sport, Spielergebnissen und Nachrichten zwingend die Google-Suche, rechne „gestern“ und „heute“ vom heutigen Datum aus und behaupte nichts, was du dort nicht gefunden hast; findest du nichts, sag das ehrlich. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben. Du kannst keine Einträge, Listen, Termine oder Einstellungen ändern und darfst nie behaupten, etwas eingetragen oder gespeichert zu haben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
+  if(o.file)sys=sys.replace("höchstens 3 Sätzen","klaren Sätzen und so ausführlich, wie die Aufgabe es braucht");
   function mkBody(model,tools,think){
-    var b={systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:q}]}],generationConfig:{maxOutputTokens:1024,temperature:.4}};
+    var b={systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:uparts}],generationConfig:{maxOutputTokens:(o.file?2048:1024),temperature:.4}};
     if(tools)b.tools=[{google_search:{}}];
     if(think){if(/2\.5/.test(model))b.generationConfig.thinkingConfig={thinkingBudget:0};else if(/3/.test(model))b.generationConfig.thinkingConfig={thinkingLevel:"minimal"};}
     return b;
@@ -661,10 +690,50 @@ function runCmd(c){
     case "timer":var m=parseFloat(String(c.p).replace(",","."));if(startTimer(m,c.w)){show("timer");return say("Timer für "+m+" Minuten läuft.");}return say("Die Minuten fehlen.");
   }
 }
+/* ---------- Anhang: Kamera, Bild oder Datei – Jarvis macht damit, was ich sage oder tippe ---------- */
+var att=null;
+function showAtt(){
+  var bar=$("attbar");bar.innerHTML="";
+  if(!att){bar.style.display="none";return;}
+  bar.style.display="flex";bar.style.alignItems="center";bar.style.gap="8px";
+  var sp=mk("span","📎 "+att.name);sp.style.flex="1";sp.style.minWidth="0";sp.style.overflowWrap="anywhere";
+  var x=mk("button","×","x");x.title="Anhang entfernen";x.onclick=function(){att=null;showAtt();};
+  bar.appendChild(sp);bar.appendChild(x);
+}
+function readB64(file){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(String(fr.result).split(",")[1]);};fr.onerror=rej;fr.readAsDataURL(file);});}
+function readTxt(file){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(String(fr.result));};fr.onerror=rej;fr.readAsText(file);});}
+function readImg(file){return new Promise(function(res,rej){
+  var fr=new FileReader();
+  fr.onload=function(){var im=new Image();
+    im.onload=function(){var sc=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*sc));c.height=Math.max(1,Math.round(im.height*sc));c.getContext("2d").drawImage(im,0,0,c.width,c.height);res({mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]});};
+    im.onerror=function(){rej(new Error("img"));};im.src=fr.result;};
+  fr.onerror=rej;fr.readAsDataURL(file);
+});}
+async function attach(file){
+  if(!file)return;
+  var N=S.cfg.name,a=null,nm=file.name||"";
+  try{
+    if(/^image\//.test(file.type)||/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(nm)){var im=await readImg(file);a={name:nm||"Foto",kind:"img",mime:im.mime,data:im.data};}
+    else if(file.type==="application/pdf"||/\.pdf$/i.test(nm)){
+      if(file.size>15e6){say("Die PDF ist zu groß (maximal 15 Megabyte), "+N+".");return;}
+      a={name:nm,kind:"pdf",mime:"application/pdf",data:await readB64(file)};}
+    else if(/^text\//.test(file.type)||/\.(txt|md|csv|json|html?|xml)$/i.test(nm)){a={name:nm,kind:"text",text:(await readTxt(file)).slice(0,120000)};}
+    else{say("Dieses Dateiformat kann ich nicht lesen, "+N+". Ich kann Fotos, Bilder, PDFs und Textdateien lesen.");return;}
+  }catch(e){say("Die Datei konnte ich nicht laden, "+N+".");return;}
+  att=a;showAtt();
+  say((a.kind==="img"?"Das Bild":"Die Datei "+a.name)+" ist angehängt. Was soll ich damit machen, "+N+"?");
+}
+$("attbtn").onclick=function(){var m=$("attmenu");m.style.display=m.style.display==="none"?"flex":"none";};
+$("mcam").onclick=function(){$("attmenu").style.display="none";$("fcam").click();};
+$("mfile").onclick=function(){$("attmenu").style.display="none";$("ffile").click();};
+$("fcam").onchange=function(){var f=this.files&&this.files[0];attach(f);this.value="";};
+$("ffile").onchange=function(){var f=this.files&&this.files[0];attach(f);this.value="";};
+
 async function askChat(q){
   if(!gkey())return say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein, "+S.cfg.name+".");
-  setState("think","Sucht im Netz...");
-  var res=await ask(q,{speak:true,log:true,search:needsSearch(String(q).toLowerCase())});
+  var ns=needsSearch(String(q).toLowerCase()),fa=(att&&!ns)?att:null;
+  setState("think",fa?"Lese Anhang...":"Sucht im Netz...");
+  var res=await ask(q,{speak:true,log:true,search:fa?false:ns,file:fa});
   if(!res){setState("off",idleText());log("Fehler: "+(lastErr||"keine Antwort"),"ai");say("Das hat nicht geklappt, "+S.cfg.name+". Die Details stehen im Verlauf.",{nolog:true});}
 }
 /* ---------- Lokale Befehle: Listen & Termine ohne Internet ---------- */
@@ -840,6 +909,13 @@ async function handle(raw){
     if(!tmr.min){say("Wie viele Minuten soll der Timer laufen, "+N+"?");return;}
     startTimer(tmr.min,tmr.label);say("Timer"+(tmr.label?" "+tmr.label:"")+" für "+durTxt(tmr.min)+" läuft, "+N+".");return;
   }
+  if(att&&/\b(datei|foto|bild|anhang)\b/.test(lc)&&/\b(entfern\w*|lösch\w*|schließ\w*|vergiss\w*|weg)\b/.test(lc)){att=null;showAtt();return say("Anhang entfernt, "+N+".");}
+  if(/(sprachausgabe|stimme)\s+(aus|an|ein)\b|\b(sei still|sei leise|sprich nicht mehr|rede nicht mehr|sprich wieder|rede wieder|sprich mit mir|rede mit mir)\b/.test(lc)){
+    var off=/\b(aus|still|leise|nicht mehr)\b/.test(lc);
+    S.cfg.speak=!off;save();
+    if(off){stopSpeak();setState("off",idleText());log("Sprachausgabe aus – ich antworte nur noch im Textfeld.","ai");return;}
+    return say("Sprachausgabe ist wieder an, "+N+".");
+  }
   if(localIntent(t,lc))return;
   var dn="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)",vb="(?:trag|trage|füge|fuege|setze|schreib)";
   function addDay(dw,txt){
@@ -866,7 +942,7 @@ async function handle(raw){
     return say("Das habe ich nicht verstanden, "+N+". Sag zum Beispiel: Trage Milch in die To-Do-Liste ein. Oder: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");
   return askChat(t);
 }
-$("f").onsubmit=function(ev){ev.preventDefault();ensureAC();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
+$("f").onsubmit=function(ev){ev.preventDefault();ensureAC();unlockAudio();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
 
 /* ---------- Einstellungen ---------- */
 var GV=["Kore","Puck","Charon","Fenrir","Aoede","Zephyr","Leda","Orus","Callirrhoe","Sulafat"].map(function(n){return [n,n];});
@@ -952,6 +1028,16 @@ function keyTest(){
 }
 $("gear").onclick=function(){
   var fl=$("fields");fl.innerHTML="";
+  var sp=mk("div",null,"row"),slb=mk("label",null),scb=mk("input");
+  scb.type="checkbox";scb.checked=S.cfg.speak!==false;
+  scb.style.cssText="flex:0 0 auto;width:20px;height:20px;margin-right:8px";
+  slb.style.cssText="color:var(--text);font-size:16px;display:flex;align-items:center;padding:4px 0";
+  scb.onchange=function(){S.cfg.speak=scb.checked;save();if(!scb.checked){stopSpeak();setState("off",idleText());}else{ensureAC();unlockAudio();say("Sprachausgabe ist an, "+S.cfg.name+".",{nolog:true});}};
+  slb.appendChild(scb);slb.appendChild(document.createTextNode("Sprachausgabe: Jarvis spricht mit mir (aus = nur Text)"));
+  sp.appendChild(slb);
+  var tb=mk("button","Ton testen","sec");tb.type="button";
+  tb.onclick=function(){ensureAC();unlockAudio();if(S.cfg.speak!==false)say("Hallo "+S.cfg.name+", hörst du mich?",{nolog:true});else log("Die Sprachausgabe ist aus.","ai");};
+  sp.appendChild(tb);fl.appendChild(sp);
   FL.forEach(function(f){
     var r=mk("div",null,"row"),l=mk("label",f[1]),i;
     if(f[2]==="voice"){
