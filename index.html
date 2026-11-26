@@ -275,6 +275,7 @@ function renderWeek(){
     items.forEach(function(it){
       var isH=it.k==="h",key=isH?"h|"+hkey(i,it.h):"e|"+it.e.id;
       var done=isH?!!S.hdone[hkey(i,it.h)]:!!it.e.done;
+      if(isH){var hl=mk("li",null,"habit");hl.appendChild(mk("span",(it.time?it.time+" ":"")+it.text+" ↻","tx"));ul.appendChild(hl);return;}
       var li=mk("li",null,"ed"+(done?" dn":""));
       var arr=mk("button",openSub[key]?"▾":"▸","x");arr.title="Gewohnheit (jede Woche)";
       arr.onclick=function(){openSub[key]=!openSub[key];render();};
@@ -425,7 +426,7 @@ function allVoices(){return ("speechSynthesis" in window)?speechSynthesis.getVoi
 /* beste deutsche Stimme automatisch wählen (Premium/Enhanced/Neural/Google bevorzugt) */
 function bestVoice(){
   var v=germanVoices();if(!v.length)return null;
-  function sc(x){var n=x.name,s=0;if(/premium|enhanced|erweitert/i.test(n))s+=5;if(/neural|natural|online/i.test(n))s+=4;if(/google/i.test(n))s+=3;if(/anna|helena|markus|katja|conrad|amala/i.test(n))s+=2;if(!x.localService)s+=1;return s;}
+  function sc(x){var n=x.name,s=0;if(/premium|enhanced|erweitert/i.test(n))s+=5;if(/neural|natural|online/i.test(n))s+=4;if(/google/i.test(n))s+=3;if(/anna|helena|petra|katja|marlene|vicki|amala|sabina|female|weiblich/i.test(n))s+=4;if(/markus|yannick|stefan|conrad|jonas|hans|martin|male|männlich/i.test(n))s-=6;if(!x.localService)s+=1;return s;}
   return v.slice().sort(function(a,b){return sc(b)-sc(a);})[0];
 }
 var voice=null,voiceFill=null,pendingSpeak=null;
@@ -462,7 +463,7 @@ async function geminiAudio(t){
   var ms=[S.cfg.gtts,"gemini-3.8-flash-tts","gemini-3.1-flash-tts-preview"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
   for(var i=0;i<ms.length;i++){
     try{
-      var r=await gfetch(encodeURIComponent(ms[i])+":generateContent",{contents:[{parts:[{text:t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}});
+      var r=await gfetch(encodeURIComponent(ms[i])+":generateContent",{contents:[{parts:[{text:"Sage warm, freundlich und natürlich: "+t}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:S.cfg.gvoice||"Kore"}}}}});
       if(r.ok){var j=await r.json();return b64f32(j.candidates[0].content.parts[0].inlineData.data);}
       if(r.status!==404&&r.status!==400)return null;
     }catch(e){return null;}
@@ -555,7 +556,7 @@ function errHint(st,msg){
 }
 async function ask(q,o){
   o=o||{};var key=gkey();lastErr="";if(!key){lastErr="Kein Schlüssel eingetragen";return null;}
-  var sys="Du bist Jarvis, ein Sprachassistent. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben. Du kannst keine Einträge, Listen, Termine oder Einstellungen ändern und darfst nie behaupten, etwas eingetragen oder gespeichert zu haben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
+  var sys="Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" (Deutschland). Du bist Jarvis, ein Sprachassistent. Nutze bei Fragen zu aktuellen Ereignissen, Sport, Spielergebnissen und Nachrichten zwingend die Google-Suche, rechne „gestern“ und „heute“ vom heutigen Datum aus und behaupte nichts, was du dort nicht gefunden hast; findest du nichts, sag das ehrlich. Antworte auf Deutsch, kurz und faktenbasiert in höchstens 3 Sätzen, ohne Markdown, ohne Listen und ohne Quellenangaben. Du kannst keine Einträge, Listen, Termine oder Einstellungen ändern und darfst nie behaupten, etwas eingetragen oder gespeichert zu haben."+(S.cfg.city?" Standort des Nutzers: "+S.cfg.city+".":"");
   function mkBody(model,tools,think){
     var b={systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:q}]}],generationConfig:{maxOutputTokens:1024,temperature:.4}};
     if(tools)b.tools=[{google_search:{}}];
@@ -563,7 +564,7 @@ async function ask(q,o){
     return b;
   }
   var models=[S.cfg.gmodel,"gemini-flash-latest","gemini-3.5-flash","gemini-flash-lite-latest"].filter(function(m,i,a){return m&&a.indexOf(m)===i;});
-  var variants=o.search===false?[[false,true],[false,false]]:[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
+  var variants=o.search===false?[[false,true],[false,false]]:o.search===true?[[true,true],[true,false]]:[[true,true],[true,false],[false,false]],r=null,used="",stop=false;
   for(var mi=0;mi<models.length&&!r&&!stop;mi++){
     for(var vi=0;vi<variants.length;vi++){
       var resp;
@@ -579,7 +580,7 @@ async function ask(q,o){
   }
   if(!r)return null;
   if(used!==S.cfg.gmodel){S.cfg.gmodel=used;save();}
-  var div=o.log?log("","ai"):null,acc="",buf="",ok=false;
+  var div=o.log?log("","ai"):null,acc="",buf="",ok=false,grounded=false;
   if(o.speak){stopSpeak();spk.streamOpen=true;}
   try{
     var rd=r.body.getReader(),dec=new TextDecoder(),sb="";
@@ -591,7 +592,7 @@ async function ask(q,o){
         var l=ls[li];if(l.indexOf("data:")!==0)continue;
         try{
           var j=JSON.parse(l.slice(5)),cd=j.candidates&&j.candidates[0],ps=(cd&&cd.content&&cd.content.parts)||[];
-          var t=ps.map(function(x){return x.text||"";}).join("");if(!t)continue;
+          if(cd&&cd.groundingMetadata)grounded=true;var t=ps.map(function(x){return x.text||"";}).join("");if(!t)continue;
           ok=true;acc+=t;buf+=t;
           var shown=cleanTxt(acc);if(div)div.textContent=shown;if(o.onText)o.onText(shown);
           if(o.speak)buf=takeSentenceLoop(buf,function(s2){enqueue(s2);});
@@ -599,6 +600,7 @@ async function ask(q,o){
       }
     }
   }catch(e){}
+  if(ok&&o.search!==false&&!grounded){var cv2="Hinweis: Das konnte ich nicht über die Suche bestätigen.";acc+=" "+cv2;if(div)div.textContent=cleanTxt(acc);if(o.onText)o.onText(cleanTxt(acc));if(o.speak)buf+=" "+cv2;}
   if(o.speak){if(buf.trim())enqueue(buf);spk.streamOpen=false;pump();}
   if(!ok){if(div)div.remove();lastErr="Leere Antwort von Gemini";return null;}
   return cleanTxt(acc);
@@ -629,7 +631,7 @@ async function runUpdate(o){
   if(!gkey()){tgt.textContent="Bitte zuerst den Gemini-Schlüssel in den Einstellungen eintragen.";if(o.speak)say("Bitte trage zuerst den Gemini-Schlüssel in den Einstellungen ein.");return false;}
   tgt.textContent="Lade Nachrichten …";setState("think","Hole Nachrichten...");
   var d=new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  var txt=await ask("Heute ist "+d+". Nenne die 2 bis 3 wichtigsten aktuellen Nachrichten des Tages weltweit, je ein prägnanter Satz. Keine Einleitung, keine Aufzählungszeichen.",{speak:!!o.speak,log:!!o.log,onText:function(t){tgt.textContent=t;}});
+  var txt=await ask("Heute ist "+d+". Nenne die 2 bis 3 wichtigsten aktuellen Nachrichten des Tages weltweit, je ein prägnanter Satz. Keine Einleitung, keine Aufzählungszeichen.",{speak:!!o.speak,log:!!o.log,search:true,onText:function(t){tgt.textContent=t;}});
   if(txt){updCache={t:txt,ts:Date.now()};return true;}
   tgt.textContent="Nachrichten konnten nicht geladen werden. "+lastErr;setState("off",idleText());
   if(o.speak)say("Die Nachrichten konnte ich gerade nicht abrufen, "+S.cfg.name+".");
@@ -698,18 +700,70 @@ var STOPV=/\b(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|
 var FILL=/\b(?:bitte|doch|mal|das|dies|dieses|mir|kannst du|könntest du|würdest du|jarvis)\b/g;
 function rc(text,orig){var mp={};String(orig).split(/\s+/).forEach(function(w){var k=w.replace(/[.,!?;:]/g,"");if(k)mp[k.toLowerCase()]=k;});return text.split(" ").map(function(w){return mp[w]||w;}).join(" ");}
 function cleanName(r){return r.replace(/\b(?:am|den|um|für|bis|zum|zur|ein|hinzu|rein|dazu|drauf|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^(?:das|der|die|ein|eine)\s+/,"");}
+/* Entfernen: "entferne Dienstag Klavier spielen aus dem Wochenplan" */
+function removeIntent(q,tg,t0){
+  var N=S.cfg.name;
+  var rest=" "+q.replace(TPH," ").replace(/\b(?:entferne|entfern|entfernen|lösche|lösch|löschen|streiche|streich|streichen|bitte|doch|mal|mir|das|dies|dieses|jarvis|kannst du|aus|von|vom|raus|weg|herunter|runter|wieder|den|die|der|dem|eintrag)\b/g," ")+" ";
+  var di=-1,wd=rest.match(new RegExp("\\b"+WD+"s?\\b"));if(wd){di=DL.indexOf(wd[1]);rest=rest.replace(wd[0]," ");}
+  var words=rest.replace(/\s+/g," ").trim().split(" ").filter(function(w){return w.length>2&&!/^\d/.test(w)&&!/^(?:uhr|und|mit|ein|eine)$/.test(w);});
+  if(!words.length){say("Was soll ich entfernen, "+N+"?");return true;}
+  function hit(txt){txt=String(txt).toLowerCase();return words.every(function(w){return txt.indexOf(w)>-1||txt.indexOf(w.slice(0,Math.max(4,w.length-2)))>-1;});}
+  function doW(){var n=0;for(var d=0;d<7;d++){if(di>=0&&d!==di)continue;S.week[d]=S.week[d].filter(function(e){if(hit(e.t)){n++;return false;}return true;});}
+    S.habits=S.habits.filter(function(h){if((di<0||!h.day||h.day===DAYS[di])&&hit(h.name)){n++;return false;}return true;});return n;}
+  function doT(){var n=0;S.todos=S.todos.filter(function(x){if(hit(x.t)){n++;return false;}return true;});return n;}
+  function doM(){var n=0;S.events=S.events.filter(function(e){if(hit(e.name)){n++;return false;}return true;});return n;}
+  function doN(){var n=0;S.notes=S.notes.filter(function(x){if(hit(x)){n++;return false;}return true;});return n;}
+  var W=[doW,"dem Wochenplan"],T=[doT,"der To-Do-Liste"],M=[doM,"dem Monatsplan"],NN=[doN,"den Notizen"];
+  var order=tg==="W"?[W]:tg==="T"?[T]:tg==="M"?[M]:tg==="N"?[NN]:(di>=0?[W,T,M,NN]:[T,W,M,NN]);
+  for(var i=0;i<order.length;i++){
+    var c=order[i][0]();
+    if(c){save();render();say(cap(rc(words.join(" "),t0||q))+" wurde aus "+order[i][1]+" entfernt, "+N+".");return true;}
+  }
+  say("Ich habe nichts mit „"+words.join(" ")+"“ gefunden, "+N+".");return true;
+}
+/* Vorlesen: "was habe ich freitags vor", "was steht morgen an" */
+function dayItems(di,d){
+  var items=[],ws=new Date(wk0()).getTime(),inWeek=d.getTime()>=ws&&d.getTime()<ws+7*864e5;
+  S.habits.forEach(function(h){if(!h.day||h.day===DAYS[di])items.push({time:h.time||"",text:h.name});});
+  if(inWeek)S.week[di].forEach(function(e){if(!e.done)items.push({time:e.time||"",text:e.t});});
+  items.sort(function(a,b){return a.time&&b.time?(a.time<b.time?-1:a.time>b.time?1:0):a.time?-1:b.time?1:0;});
+  var c=d.getTime();
+  S.events.filter(function(e){return e.target>=c&&e.target<c+864e5;}).forEach(function(e){items.push({time:e.allDay?"":p2(new Date(e.target).getHours())+":"+p2(new Date(e.target).getMinutes()),text:e.name});});
+  return items.map(function(x){return (x.time?"um "+x.time+" Uhr ":"")+x.text;});
+}
+function readDay(wi,rel){
+  var N=S.cfg.name,now=new Date(),d=new Date(now),td=(now.getDay()+6)%7,di,label;
+  d.setHours(0,0,0,0);
+  if(rel){d.setDate(d.getDate()+(rel==="heute"?0:rel==="morgen"?1:2));di=(d.getDay()+6)%7;label=rel==="heute"?"Heute":rel==="morgen"?"Morgen":"Übermorgen";}
+  else{di=wi;var diff=(di-td+7)%7;d.setDate(d.getDate()+diff);label=diff===0?"Heute":"Am "+DAYS[di];}
+  var it=dayItems(di,d);
+  say(it.length?label+" steht an: "+it.join(", ")+".":label+" ist nichts eingetragen, "+N+".");
+}
+function readWeek(){
+  var N=S.cfg.name,now=new Date(),td=(now.getDay()+6)%7,out=[];
+  for(var di=td;di<7;di++){var d=new Date(now);d.setHours(0,0,0,0);d.setDate(d.getDate()+(di-td));var it=dayItems(di,d);if(it.length)out.push((di===td?"Heute":DAYS[di])+": "+it.join(", "));}
+  say(out.length?"Diese Woche steht an. "+out.join(". ")+".":"Diese Woche ist nichts eingetragen, "+N+".");
+}
 function localIntent(t,lc){
   var N=S.cfg.name,m;
   var q=lc.replace(/\bto[\s-]?do\b/g,"todo").replace(/\s+/g," ").trim();
   var tg=listTarget(q);
+  /* Entfernen */
+  if(/\b(?:entferne|entfern|entfernen|lösche|lösch|löschen|streiche|streich|streichen)\b/.test(q))return removeIntent(q,tg,t);
+  /* Vorlesen nach Tag/Woche */
+  if(/^(?:was|welche|habe|hab|steht|ist|gibt|wie|zeig|zeige|lies|sag|sage|kannst|erzähl)\b/.test(q)&&(!tg||tg==="W")&&!/wetter|nachricht|news|champions|bundesliga|spiel/.test(q)&&(/\b(?:vor|geplant|termine?|plan|programm|anliegt|ansteht|machen|tun)\b/.test(q)||/\b(?:an|los)\s*$/.test(q))){
+    var rl=q.match(/\b(heute|übermorgen|morgen)\b/),wq=q.match(new RegExp("\\b"+WD+"s?\\b"));
+    if(wq||rl){readDay(wq?DL.indexOf(wq[1]):null,rl?rl[1]:null);return true;}
+    if(/\bwoche\b/.test(q)){readWeek();return true;}
+  }
   /* Vorlesen: "was steht auf der To-Do-Liste" */
-  if(tg&&/^(?:was|welche|zeig|lies|sag|wie)\b/.test(q)){
+  if(tg&&/^(?:was|welche|zeig|lies|sag|wie|ist|sind|habe|hab|gibt|steht|stehen|kannst)\b/.test(q)){
     if(tg==="W"){doReport();return true;}
     if(tg==="T"){var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});say(ot.length?"Auf deiner To-Do-Liste steht: "+ot.join(", ")+".":"Deine To-Do-Liste ist leer, "+N+".");return true;}
     if(tg==="M"){var ev=S.events.slice(0,5).map(function(e){return e.name+", "+evLeft(e);});say(ev.length?"Im Monatsplan steht: "+ev.join("; ")+".":"Im Monatsplan sind keine Termine, "+N+".");return true;}
     if(tg==="N"){say(S.notes.length?"In deinen Notizen steht: "+S.notes.slice(0,5).join(", ")+".":"Du hast keine Notizen, "+N+".");return true;}
   }
-  if(tg&&/^(?:ist|sind|habe|hab|gibt|steht|stehen|wann|wo|warum)\b/.test(q))return false;
+  if(tg&&/^(?:wann|wo|warum)\b/.test(q))return false;
   var wdm=q.match(new RegExp("\\b"+WD+"(?:s?[a-zäöüß]{3,})?\\b"));
   var vbre=/^(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|pack|packe|mach|mache|tu|tue|leg|lege|erstelle|nimm)\b/;
   if(!tg){
@@ -722,7 +776,7 @@ function localIntent(t,lc){
   var rest=" "+q.replace(TPH," ").replace(STOPV," ").replace(FILL," ").replace(/^\s*(?:aufgabe|termin|notiz)\b\s*:?/," ")+" ";
   if(tg==="W"){
     var hab=false,time="",di=(new Date().getDay()+6)%7,mt;
-    var hre=/\b(?:jeden|jede woche|jede|wöchentlich|wöchentliche[rn]?|immer)\b/g;
+    var hre=/\b(?:als gewohnheit|gewohnheit|jeden|jede woche|jede|wöchentlich|wöchentliche[rn]?|immer)\b/g;
     if(hre.test(rest)){hab=true;rest=rest.replace(hre," ");}
     if((mt=rest.match(/ (?:um |ab |gegen )?(\d{1,2})(?:[:.](\d{2}))? uhr(?: (\d{2}))? /))){time=p2(+mt[1])+":"+p2(mt[2]?+mt[2]:(mt[3]?+mt[3]:0));rest=rest.replace(mt[0]," ");}
     else if((mt=rest.match(/ (?:um |ab |gegen )?(\d{1,2}):(\d{2}) /))){time=p2(+mt[1])+":"+p2(+mt[2]);rest=rest.replace(mt[0]," ");}
@@ -968,4 +1022,3 @@ autoBrief();
 </script>
 </body>
 </html>
-
