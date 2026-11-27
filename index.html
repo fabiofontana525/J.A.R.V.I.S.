@@ -112,9 +112,10 @@ dialog::backdrop{background:#000c}
     <section class="card" id="sw">
       <h2>Wochenplan</h2>
       <div class="wk" id="wk"></div>
-      <form class="fr" id="wkf">
-        <input type="text" id="wki" placeholder="Neuer Eintrag …" aria-label="Neuer Eintrag">
+      <form class="fr wrap" id="wkf">
+        <input type="text" id="wki" placeholder="Neuer Eintrag …" aria-label="Neuer Eintrag" style="flex:1 1 140px">
         <select id="wkd" style="flex:0 0 110px" aria-label="Tag"></select>
+        <input type="time" id="wkt" style="flex:0 0 100px" aria-label="Uhrzeit (optional)" title="Uhrzeit (optional)">
         <button class="go" type="submit">+</button>
       </form>
       <p class="hint">Haken = erledigt · ⇄ = auf anderen Tag verschieben (am PC auch per Ziehen).</p>
@@ -186,7 +187,7 @@ var DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonnt
 var GBASE="https://generativelanguage.googleapis.com/v1beta/models/";
 var ACT={say:"Text sagen",lagebericht:"Lagebericht",update:"Update (Nachrichten)",ask:"Frage an Gemini",page:"Seite öffnen",timer:"Timer (Minuten)"};
 var PAGES={home:"Start",tools:"Rechner",timer:"Timer",info:"Übersicht",habits:"Gewohnheiten",notes:"Notizen"};
-var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,convo:45,speak:true,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
+var DEF={wake:"jarvis",codes:"",reply:"Ja, Chef.",name:"Capo",rate:1,color:"#ff8a1f",gmodel:"gemini-flash-latest",city:"",voice:"",pitch:1,auto:true,autoh:8,convo:45,speak:true,stopmic:true,engine:"device",gvoice:"Kore",gtts:"gemini-3.8-flash-tts",cmds:[]};
 var S={ts:0,cfg:{},week:[[],[],[],[],[],[],[]],notes:[],habits:[],todos:[],events:[],hdone:{},countdown:null,lastDay:"",lastBrief:""};
 
 try{var r0=localStorage.getItem("jarvis-v5");if(r0)S=JSON.parse(r0);}catch(e){}
@@ -233,6 +234,16 @@ checkDailyReset();
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function p2(n){return n<10?"0"+n:""+n;}
+/* Uhrzeit nur anhängen, wenn vorhanden: "Training (18:00 Uhr)" */
+function tl(text,time){return time?text+" ("+time+" Uhr)":text;}
+/* Uhrzeit aus Text lesen: "Training 18 Uhr" / "um 18:30" */
+function extractTime(s){
+  var m=s.match(/(?:^|\s)(?:um\s+|ab\s+|gegen\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*uhr(?:\s+(\d{2}))?(?=\s|$)/i)||s.match(/(?:^|\s)(?:um\s+|ab\s+)?(\d{1,2}):(\d{2})(?=\s|$)/i);
+  if(!m)return {time:"",text:s};
+  var hh=+m[1],mm=m[2]?+m[2]:(m[3]?+m[3]:0);
+  if(hh>23||mm>59)return {time:"",text:s};
+  return {time:p2(hh)+":"+p2(mm),text:s.replace(m[0]," ").replace(/\s+/g," ").trim()};
+}
 function hkey(i,h){return wk0()+"|"+i+"|"+h.name+"|"+(h.time||"");}
 /* Termine: 2 Stunden nach dem Zeitpunkt (ohne Uhrzeit: nach dem Tag) verschwinden sie */
 function purgeEvents(){var n=Date.now(),b=S.events.length;S.events=S.events.filter(function(e){return e.target+(e.allDay?864e5:72e5)>n;});if(S.events.length!==b){save();return true;}return false;}
@@ -283,7 +294,7 @@ function renderWeek(){
     items.forEach(function(it){
       var isH=it.k==="h",key=isH?"h|"+hkey(i,it.h):"e|"+it.e.id;
       var done=isH?!!S.hdone[hkey(i,it.h)]:!!it.e.done;
-      if(isH){var hl=mk("li",null,"habit");hl.appendChild(mk("span",(it.time?it.time+" ":"")+it.text+" ↻","tx"));ul.appendChild(hl);return;}
+      if(isH){var hl=mk("li",null,"habit");hl.appendChild(mk("span",tl(it.text,it.time)+" ↻","tx"));ul.appendChild(hl);return;}
       var li=mk("li",null,"ed"+(done?" dn":""));
       var arr=mk("button",openSub[key]?"▾":"▸","x");arr.title="Gewohnheit (jede Woche)";
       arr.onclick=function(){openSub[key]=!openSub[key];render();};
@@ -293,7 +304,7 @@ function renderWeek(){
         else{it.e.done=cb.checked;save();render();if(cb.checked)removeLater(S.week[i],it.e);}
       };
       li.appendChild(arr);li.appendChild(cb);
-      li.appendChild(mk("span",(it.time?it.time+" ":"")+it.text,"tx"));
+      li.appendChild(mk("span",tl(it.text,it.time),"tx"));
       if(!isH){
         li.draggable=true;
         li.ondragstart=function(ev){ev.dataTransfer.setData("text/plain",i+"|"+it.j);};
@@ -368,7 +379,7 @@ function renderEv(){
   if(!S.events.length)u.appendChild(mk("li","Keine Termine","empty"));
 }
 function renderHab(){var u=$("ul-hab");if(!u)return;u.innerHTML="";S.habits.forEach(function(h,i){
-  var li=mk("li",h.name+(h.day?" ("+h.day+")":" (Jeden Tag)"));
+  var li=mk("li",tl(h.name,h.time)+(h.day?" ("+h.day+")":" (Jeden Tag)"));
   var x=mk("button","×","x");x.onclick=function(){S.habits.splice(i,1);save();render();};li.appendChild(x);u.appendChild(li);
 });}
 function renderNotes(){
@@ -384,7 +395,7 @@ function render(){
 (function(){
   var sel=$("wkd"),td=(new Date().getDay()+6)%7;
   DAYS.forEach(function(d,i){sel.appendChild(Object.assign(mk("option",d),{value:String(i)}));});sel.value=String(td);
-  $("wkf").onsubmit=function(e){e.preventDefault();var v=$("wki").value.trim();if(!v)return;var i=+sel.value;addWeek(i,v,"",false);$("wki").value="";};
+  $("wkf").onsubmit=function(e){e.preventDefault();var v=$("wki").value.trim();if(!v)return;var i=+sel.value,tv=$("wkt").value,xt=extractTime(v);if(!tv&&xt.time){tv=xt.time;v=xt.text;}if(!v)return;addWeek(i,v,tv||"",false);$("wki").value="";$("wkt").value="";};
   $("tdf").onsubmit=function(e){e.preventDefault();var v=$("tdi").value.trim();if(!v)return;S.todos.push({t:cap(v),done:false});$("tdi").value="";save();render();};
   $("tdclr").onclick=function(){S.todos=S.todos.filter(function(t){return !t.done;});save();render();};
   $("cdf").onsubmit=function(e){e.preventDefault();var name=$("cdname").value.trim(),time=$("cdtime").value;if(!name||!time)return;S.events.push({name:cap(name),target:new Date(time).getTime()});$("cdname").value="";$("cdtime").value="";save();render();};
@@ -442,9 +453,10 @@ function pv(){var sv=S.cfg.voice;voice=allVoices().find(function(x){return x.nam
 if("speechSynthesis" in window){pv();speechSynthesis.onvoiceschanged=function(){pv();if(voiceFill&&$("dlg").open)voiceFill();};}
 
 var spk={q:[],busy:false,gen:0,src:null,streamOpen:false,lastCancel:0},ac=null;
-var convoUntil=0,unlocked=false,greeted=false;
+var convoUntil=0,unlocked=false,greeted=false,stopRE=/(?:^|[\s,.!?])(?:stopp|stop|halt|abbrechen|abbruch)(?=[\s,.!?]|$)/;
 function speaking(){return spk.busy||spk.q.length>0||spk.streamOpen;}
-function micPause(){if(rec&&active){try{rec.stop();}catch(e){}}}
+function micPause(){if(S.cfg.stopmic!==false)return; /* Mikrofon bleibt an, damit „Stopp“ gehört wird */
+  if(rec&&active){try{rec.stop();}catch(e){}}}
 function micResume(){setTimeout(function(){if(!speaking()){convoUntil=S.cfg.convo>0?Date.now()+S.cfg.convo*1000:0;startRec();}},350);}
 function geminiOn(){return S.cfg.engine==="gemini"&&!!gkey();}
 function ensureAC(){try{if(!ac){var C=window.AudioContext||window.webkitAudioContext;if(C)ac=new C();}if(ac&&ac.state==="suspended")ac.resume();}catch(e){}}
@@ -513,7 +525,7 @@ async function pump(){
     if(!ok)await devSpeak(it.t);
   }catch(e){}
   if(g!==spk.gen)return;
-  spk.busy=false;pump();
+  spk.busy=false;spk.endAt=Date.now();pump();
 }
 function say(txt,o){o=o||{};if(!o.nolog)log(txt,"ai");stopSpeak();enqueue(txt,o.dev);}
 $("cv").onclick=function(){stopSpeak();setState("off",idleText());micResume();};
@@ -524,6 +536,10 @@ function startRec(){if(!active||!rec)return;try{rec.start();}catch(e){}}
 function wakeWords(){return [S.cfg.wake].concat(String(S.cfg.codes||"").split(",")).map(function(x){return x.trim().toLowerCase();}).filter(Boolean);}
 function trigWords(){return S.cfg.cmds.map(function(c){return c.w;}).concat(["lagebericht","update"]);}
 function onSpeech(t){
+  var lc0=t.toLowerCase();
+  /* „Stopp“ / „Jarvis, stopp“: Sprachausgabe sofort abbrechen, danach wieder zuhören */
+  if(stopRE.test(lc0)&&(speaking()||state==="speak"||state==="think")){stopSpeak();setState("off",idleText());micResume();return;}
+  if(S.cfg.stopmic!==false&&Date.now()-(spk.endAt||0)<1500)return; /* Nachhall der eigenen Stimme ignorieren */
   if(speaking()||state==="think")return; /* nicht auf die eigene Stimme hören */
   var lc=t.toLowerCase();
   if(Date.now()<convoUntil){if(intentional(lc))handle(t);return;} /* offenes Gespräch: kein Aktivierungswort nötig */
@@ -542,7 +558,7 @@ function onSpeech(t){
 function initRec(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return false;
   rec=new SR();rec.lang="de-DE";rec.continuous=true;rec.interimResults=false;
   rec.onresult=function(ev){var t=ev.results[ev.results.length-1][0].transcript.trim();if(!t)return;onSpeech(t);};
-  rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active&&!speaking())setTimeout(startRec,250);};
+  rec.onstart=function(){if(!spk.busy)setState("listen","Höre zu...");};rec.onend=function(){if(active&&(S.cfg.stopmic!==false||!speaking()))setTimeout(startRec,250);};
   rec.onerror=function(e){var er=e&&e.error;if(er==="not-allowed"||er==="service-not-allowed"){active=false;setState("off","Mikrofon nicht erlaubt – bitte in den Safari-Einstellungen erlauben");}};
   return true;}
 function activate(){if(active)return;if(!rec&&!initRec())return;active=true;startRec();}
@@ -611,10 +627,12 @@ async function ask(q,o){
   if(used!==S.cfg.gmodel){S.cfg.gmodel=used;save();}
   var div=o.log?log("","ai"):null,acc="",buf="",ok=false,grounded=false;
   if(o.speak){stopSpeak();spk.streamOpen=true;}
+  var g0=spk.gen;
   try{
     var rd=r.body.getReader(),dec=new TextDecoder(),sb="";
     for(;;){
       var c=await rd.read();if(c.done)break;
+      if(o.speak&&spk.gen!==g0){try{rd.cancel();}catch(e){}break;} /* „Stopp“ während Gemini noch antwortet */
       sb+=dec.decode(c.value,{stream:true});
       var ls=sb.split("\n");sb=ls.pop();
       for(var li=0;li<ls.length;li++){
@@ -630,7 +648,7 @@ async function ask(q,o){
     }
   }catch(e){}
   if(ok&&o.search!==false&&!grounded){var cv2="Hinweis: Das konnte ich nicht über die Suche bestätigen.";acc+=" "+cv2;if(div)div.textContent=cleanTxt(acc);if(o.onText)o.onText(cleanTxt(acc));if(o.speak)buf+=" "+cv2;}
-  if(o.speak){if(buf.trim())enqueue(buf);spk.streamOpen=false;pump();}
+  if(o.speak){if(buf.trim()&&spk.gen===g0)enqueue(buf);if(spk.gen===g0)spk.streamOpen=false;pump();}
   if(!ok){if(div)div.remove();lastErr="Leere Antwort von Gemini";return null;}
   return cleanTxt(acc);
 }
@@ -638,17 +656,11 @@ async function ask(q,o){
 /* ---------- Lagebericht (heute) & Update (Nachrichten) ---------- */
 function reportText(){
   var d=new Date(),td=(d.getDay()+6)%7,k0=wk0(),todo=[],dn=0,p=[];
-  S.habits.forEach(function(h){if(h.day&&h.day!==DAYS[td])return;if(S.hdone[hkey(td,h)])dn++;else todo.push((h.time?h.time+" ":"")+h.name);});
-  S.week[td].forEach(function(e){if(e.done)dn++;else todo.push((e.time?e.time+" ":"")+e.t);});
+  S.habits.forEach(function(h){if(h.day&&h.day!==DAYS[td])return;if(S.hdone[hkey(td,h)])dn++;else todo.push(tl(h.name,h.time));});
+  S.week[td].forEach(function(e){if(e.done)dn++;else todo.push(tl(e.t,e.time));});
   p.push(todo.length?"Heute steht an: "+todo.join(", ")+(dn?" ("+dn+" schon erledigt)":"")+".":(dn?"Heute ist im Wochenplan alles erledigt.":"Heute steht nichts im Wochenplan."));
   var ot=S.todos.filter(function(x){return !x.done;}).map(function(x){return x.t;});
   p.push(ot.length?"Offene To-Dos: "+ot.join(", ")+".":"Keine offenen To-Dos.");
-  var a=new Date(d);a.setHours(0,0,0,0);var s0=a.getTime(),s1=s0+864e5;
-  var today=S.events.filter(function(e){return e.target>=s0&&e.target<s1;}).map(function(e){return e.name+(e.allDay?"":" um "+new Date(e.target).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr");});
-  if(today.length)p.push("Termine heute: "+today.join(", ")+".");
-  var nx=S.events.filter(function(e){return e.target>=s1;}).sort(function(x,y){return x.target-y.target;})[0];
-  if(nx)p.push("Als Nächstes: "+nx.name+", "+evLeft(nx)+".");
-  if(S.notes.length)p.push("Notizen: "+S.notes.slice(0,3).join(", ")+".");
   return p.join("\n");
 }
 function doReport(){var t=reportText();$("lb-text").textContent=t;say("Lagebericht für "+S.cfg.name+". "+t.replace(/\n/g," "));}
@@ -768,7 +780,7 @@ var TPH=/(?:\b(?:in|auf|zu|zur|zum|im|ins|bei|unter)\s+)?(?:\b(?:die|der|den|das
 var STOPV=/\b(?:füge|fuege|trage|trag|setze|schreibe|schreib|speichere|notiere|packe|pack|mache|mach|tue|tu|lege|leg|erstelle|nimm)\b/g;
 var FILL=/\b(?:bitte|doch|mal|das|dies|dieses|mir|kannst du|könntest du|würdest du|jarvis)\b/g;
 function rc(text,orig){var mp={};String(orig).split(/\s+/).forEach(function(w){var k=w.replace(/[.,!?;:]/g,"");if(k)mp[k.toLowerCase()]=k;});return text.split(" ").map(function(w){return mp[w]||w;}).join(" ");}
-function cleanName(r){return r.replace(/\b(?:am|den|um|für|bis|zum|zur|ein|hinzu|rein|dazu|drauf|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^(?:das|der|die|ein|eine)\s+/,"");}
+function cleanName(r){return r.replace(/\b(?:am|den|um|für|bis|zum|zur|ein|hinzu|rein|dazu|drauf|uhr)\b/g," ").replace(/\s+/g," ").trim().replace(/^[:;,.\-–—\s]+/,"").replace(/^(?:das|der|die|ein|eine)\s+/,"");}
 /* Entfernen: "entferne Dienstag Klavier spielen aus dem Wochenplan" */
 function removeIntent(q,tg,t0){
   var N=S.cfg.name;
@@ -813,10 +825,41 @@ function readWeek(){
   for(var di=td;di<7;di++){var d=new Date(now);d.setHours(0,0,0,0);d.setDate(d.getDate()+(di-td));var it=dayItems(di,d);if(it.length)out.push((di===td?"Heute":DAYS[di])+": "+it.join(", "));}
   say(out.length?"Diese Woche steht an. "+out.join(". ")+".":"Diese Woche ist nichts eingetragen, "+N+".");
 }
+/* Verschieben: "verschiebe Essen gehen bei Oma von Freitag auf Samstag (um 19 Uhr)" */
+function moveIntent(q,t){
+  var N=S.cfg.name,s=" "+q.replace(/[,!?]+/g," ")+" ";
+  var xt=extractTime(s.trim()),newTime=xt.time;s=" "+xt.text+" ";
+  var R="(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|heute|übermorgen|morgen)";
+  function dix(w){if(w==="heute"||w==="morgen"||w==="übermorgen"){var d=new Date();d.setDate(d.getDate()+(w==="heute"?0:w==="morgen"?1:2));return (d.getDay()+6)%7;}return DL.indexOf(w);}
+  var tgt=-1,src=-1,m;
+  if((m=s.match(new RegExp(" (?:auf|zum|zu|nach|für) "+R+"s? ")))){tgt=dix(m[1]);s=s.replace(m[0]," ");}
+  if((m=s.match(new RegExp(" (?:von|vom|am|an|ab) "+R+"s? ")))){src=dix(m[1]);s=s.replace(m[0]," ");}
+  else if((m=s.match(new RegExp(" "+R+"s? ")))){src=dix(m[1]);s=s.replace(m[0]," ");}
+  var words=s.replace(TPH," ").replace(/\b(?:verschiebe|verschieb|verschieben|verlege|verleg|verlegen|schiebe|schieb|bitte|doch|mal|mir|das|dies|dieses|jarvis|kannst du|könntest du|würdest du|termin|eintrag|im|in|aus|dem|den|die|der|von|vom|auf|nach|zum|zu|für|um|uhr|am|an|ab|noch|wochenplan)\b/g," ").replace(/\s+/g," ").trim().split(" ").filter(function(w){return w.length>2&&!/^\d/.test(w);});
+  if(!words.length){say("Was soll ich verschieben, "+N+"?");return true;}
+  if(tgt<0){say("Auf welchen Tag soll ich es verschieben, "+N+"? Sag zum Beispiel: Verschiebe Essen von Freitag auf Samstag.");return true;}
+  function hit(txt){txt=String(txt).toLowerCase();return words.every(function(w){return txt.indexOf(w)>-1||txt.indexOf(w.slice(0,Math.max(4,w.length-2)))>-1;});}
+  var days=src>=0?[src]:[0,1,2,3,4,5,6],found=null;
+  for(var k=0;k<days.length&&!found;k++){var arr=S.week[days[k]];for(var j=0;j<arr.length;j++){if(hit(arr[j].t)){found={d:days[k],j:j};break;}}}
+  if(!found){
+    var isH=S.habits.some(function(h){return hit(h.name);});
+    say(isH?"Das ist eine Gewohnheit und steht jede Woche, "+N+". Entferne sie und trage sie für den neuen Tag neu ein.":"Ich habe nichts mit „"+words.join(" ")+"“ im Wochenplan gefunden, "+N+".");
+    return true;
+  }
+  var e=S.week[found.d][found.j];
+  if(found.d===tgt&&!newTime){say(e.t+" steht schon am "+DAYS[tgt]+", "+N+".");return true;}
+  S.week[found.d].splice(found.j,1);
+  if(newTime)e.time=newTime;
+  S.week[tgt].push(e);sortDay(tgt);if(found.d!==tgt)sortDay(found.d);openD[tgt]=true;save();render();
+  say(e.t+(found.d===tgt?" ist jetzt":" ist von "+DAYS[found.d]+" auf "+DAYS[tgt]+" verschoben")+(e.time?(found.d===tgt?" um ":", um ")+e.time+" Uhr":"")+", "+N+".");
+  return true;
+}
 function localIntent(t,lc){
   var N=S.cfg.name,m;
   var q=lc.replace(/\bto[\s-]?do\b/g,"todo").replace(/\s+/g," ").trim();
   var tg=listTarget(q);
+  /* Verschieben */
+  if(/\b(?:verschieb\w*|verleg\w*)\b/.test(q))return moveIntent(q,t);
   /* Entfernen */
   if(/\b(?:entferne|entfern|entfernen|lösche|lösch|löschen|streiche|streich|streichen)\b/.test(q))return removeIntent(q,tg,t);
   /* Vorlesen nach Tag/Woche */
@@ -890,19 +933,78 @@ function isQuestion(q){return /^(?:wer|wie|was|wo|wann|warum|wieso|weshalb|welch
 /* Im offenen Gespräch Nebengeräusche ignorieren: nur Absichtliches weiterverarbeiten */
 function intentional(lc){
   var q=lc.replace(/\bto[\s-]?do\b/g,"todo");
+  if(localCmdMatch(q))return true;
+  if(/\b(?:verschieb\w*|verleg\w*|entfern\w*|lösch\w*)\b/.test(q))return true;
   return /(todo|wochenplan|wochenliste|monatsplan|monatsliste|kalender|notizblock|notizen|timer|wecker|stoppuhr|lagebericht|update)/.test(q)||/^(?:trag|trage|füge|fuege|schreib|schreibe|stell|stelle|setze|notiere|erinner|gewohnheit|notiz|aufgabe|termin|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b/.test(q)||isQuestion(q)||needsSearch(q)||S.cfg.cmds.some(function(c){return c.w&&q.indexOf(c.w)!==-1;});
 }
 /* Nur bei Fragen zu Aktuellem/Fakten braucht Gemini die Internetsuche */
 function needsSearch(lc){return /(wetter|nachricht|news|aktuell|neueste|gestern|ergebnis|spielstand|gewonnen|verloren|bundesliga|champions|tabelle|aktie|börse|\bkurs\b|preis|wer ist|wer war|wann|wo gibt|öffnungszeit|passiert|los ist|letzte|\b20\d\d\b)/.test(lc);}
 
-async function handle(raw){
+/* =====================================================================
+   LOKALE BEFEHLSWEICHE  –  alles hier läuft OHNE Gemini-API
+   Reihenfolge in localRouter(): Stopp → eigene Codewörter (Einstellungen)
+   → LOCAL_COMMANDS (diese Tabelle) → Listen/Termine/Notizen/Timer/Verschieben …
+   → erst ganz am Ende (handle) Gemini.
+   EIGENE LOKALE BEFEHLE ergänzen: einfach einen Eintrag in LOCAL_COMMANDS einfügen:
+     {test:/regex/ ODER function(lc){return true/false;},
+      run:function(t,lc,m){ …etwas tun…; say("Antwort"); return true; }}
+   run gibt true zurück = erledigt. false = weiter prüfen (sauberer Rückfall).
+   ===================================================================== */
+var GUARD_ACTIONS=true; /* true: Eintrags-/Lösch-Wünsche, die nicht verstanden wurden, gehen NICHT an Gemini (Gemini kann deine Listen nicht ändern). false: auch diese gehen an Gemini. */
+function numDe(x){return x.replace(/(\d)\.(\d{3})(?!\d)/g,"$1$2").replace(/(\d)\.(\d{3})(?!\d)/g,"$1$2").replace(/,/g,".");}
+function fmtNum(n){return n.toLocaleString("de-DE",{maximumFractionDigits:6});}
+/* Rechnen: "Was ist 145 mal 12", "Rechne 2500 durch 4", "15% von 240", "48 + 75", "Wurzel aus 144" → Text oder null */
+function calcLocal(lc){
+  var q=" "+lc.replace(/[?!]+/g," ").replace(/\s+/g," ").trim()+" ";
+  var pre=/^ (?:jarvis )?(?:was ist|was sind|was ergibt|wie viel ist|wie viel sind|wie viel ergibt|wieviel ist|wieviel sind|wieviel ergibt|wie viele sind|rechne|berechne|errechne|kannst du (?:mir )?(?:mal )?(?:bitte )?(?:ausrechnen|rechnen|berechnen)) /;
+  var body=" "+q.replace(pre," ").replace(/\b(?:bitte|mal|mir|aus|doch|ungefähr)\b(?!\s*\d)/g," ").replace(/\s+/g," ").trim()+" ";
+  var orig=body.trim(),m;
+  if((m=body.match(/^ ?([\d.,]+)\s*(?:%|prozent)\s+von\s+([\d.,]+) ?$/))){
+    var p=parseFloat(numDe(m[1])),v=parseFloat(numDe(m[2]));
+    if(isFinite(p)&&isFinite(v))return fmtNum(p)+" Prozent von "+fmtNum(v)+" sind "+fmtNum(Math.round(p*v/100*1e6)/1e6)+".";
+  }
+  if((m=body.match(/^ ?(?:die )?wurzel (?:aus|von) ([\d.,]+) ?$/))){var w=parseFloat(numDe(m[1]));if(isFinite(w)&&w>=0)return "Die Wurzel aus "+fmtNum(w)+" ist "+fmtNum(Math.round(Math.sqrt(w)*1e6)/1e6)+".";}
+  var ex=body.replace(/\b(?:geteilt durch|dividiert durch|durch)\b/g," / ").replace(/\b(?:multipliziert mit|mal)\b/g," * ").replace(/(\d)\s*[x×]\s*(?=\d)/g,"$1 * ").replace(/\bplus\b/g," + ").replace(/\bminus\b/g," - ").replace(/\bhoch\b/g," ** ");
+  ex=numDe(ex).replace(/\s+/g," ").trim();
+  if(!/^[\d\s+\-*\/().]+$/.test(ex)||!/\d\s*(?:\*\*|[+\-*\/])\s*[\d(]/.test(ex)||/\d{4}-\d{2}-\d{2}/.test(ex)||/\*{3,}/.test(ex))return null;
+  var r;try{r=Function('"use strict";return ('+ex+')')();}catch(e){return null;}
+  if(typeof r!=="number")return null;
+  if(!isFinite(r))return /\/\s*0(?![\d.])/.test(ex)?"Durch null kann man nicht teilen.":null;
+  return orig+" ist "+fmtNum(Math.round(r*1e6)/1e6)+".";
+}
+function tod(){var h=new Date().getHours();return h<11?"Guten Morgen":h<18?"Guten Tag":"Guten Abend";}
+var NM="(?:[,\\s]+(?:jarvis|capo|chef|\\w+))?[.!?\\s]*$";
+var LOCAL_COMMANDS=[
+  /* Uhrzeit & Datum */
+  {test:/wie\s?viel uhr|wie sp(?:ä|ae)t|uhrzeit/,run:function(){say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+S.cfg.name+".");return true;}},
+  {test:/welcher tag|welches datum|der wievielte|den wievielten|welcher wochentag|welchen tag haben wir/,run:function(){say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+S.cfg.name+".");return true;}},
+  /* Begrüßung & Smalltalk */
+  {test:new RegExp("^(?:jarvis[,\\s]+)?(?:guten (?:morgen|tag|abend)|gute nacht)"+NM),run:function(t,lc){say(/nacht/.test(lc)?"Gute Nacht, "+S.cfg.name+".":tod()+", "+S.cfg.name+". Wie kann ich helfen?");return true;}},
+  {test:new RegExp("^(?:jarvis[,\\s]+)?(?:hallo|hi|hey|moin|servus|huhu)"+NM),run:function(){say("Hallo "+S.cfg.name+", wie kann ich helfen?");return true;}},
+  {test:new RegExp("^(?:jarvis[,\\s]+)?(?:danke|dankeschön|danke schön|vielen dank|besten dank|danke dir)"+NM),run:function(){say("Gern geschehen, "+S.cfg.name+".");return true;}},
+  {test:new RegExp("^(?:jarvis[,\\s]+)?(?:tschüss|tschüs|tschau|ciao|bis später|bis bald|bis morgen|auf wiedersehen|bye)"+NM),run:function(){say("Bis später, "+S.cfg.name+".");return true;}},
+  {test:/wie geht(?:'?s| es) (?:dir|ihnen)|alles gut bei dir/,run:function(){say("Mir geht es bestens, danke der Nachfrage. Wie kann ich helfen, "+S.cfg.name+"?");return true;}},
+  {test:/^(?:jarvis[,\s]+)?(?:wer bist du|wie heißt du|stell dich vor)/,run:function(){say("Ich bin Jarvis, dein persönlicher Assistent, "+S.cfg.name+".");return true;}},
+  {test:/^(?:jarvis[,\s]+)?(?:was kannst du|hilfe\b|was sind deine funktionen)/,run:function(){say("Ich verwalte deinen Wochenplan, Monatsplan, deine To-Do-Liste und Notizen, stelle Timer, rechne, lese Fotos und Dateien und beantworte Fragen über das Internet, "+S.cfg.name+".");return true;}},
+  {test:/^(?:jarvis[,\s]+)?(?:hörst du mich|kannst du mich hören|bist du da|bist du wach)/,run:function(){say("Ja, ich höre dich, "+S.cfg.name+".");return true;}},
+  {test:new RegExp("^(?:ok|okay|ja|nein|gut|super|alles klar|genau|stimmt|prima|cool|perfekt|passt)"+NM),run:function(){say("Alles klar, "+S.cfg.name+".");return true;}},
+  /* Erinnerung: "Erinnere mich in 30 Sekunden (an …)" = lokaler Timer */
+  {test:/\berinner\w*\s+mich\b/,run:function(t,lc){var tm=parseTimer(lc.replace(/\berinner\w*\b/,"timer"));if(!tm||!tm.min)return false;var lab=rc(tm.label.replace(/^an\s+/,""),t);startTimer(tm.min,lab?"für "+lab:"");say("Ich erinnere dich in "+durTxt(tm.min)+(lab?" an "+lab:"")+", "+S.cfg.name+".");return true;}},
+  /* Rechnen */
+  {test:function(lc){return calcLocal(lc);},run:function(t,lc){var r=calcLocal(lc);if(!r)return false;say(r);return true;}}
+  /* ← hier eigene lokale Befehle ergänzen (Komma davor nicht vergessen) */
+];
+function localCmdMatch(lc){for(var i=0;i<LOCAL_COMMANDS.length;i++){var c=LOCAL_COMMANDS[i];if(typeof c.test==="function"?c.test(lc):c.test.test(lc))return true;}return false;}
+
+/* Lokale Befehlsweiche: gibt "GEMINI" zurück, wenn kein lokaler Befehl gegriffen hat */
+async function localRouter(raw){
   var t=raw.trim(),lc=t.toLowerCase(),m,N=S.cfg.name;
   log(t,"me");
+  if(/^(?:jarvis[,\s]+)?(?:stopp|stop|halt|abbrechen)\s*[.!]?$/.test(lc)){stopSpeak();setState("off",idleText());micResume();return;}
   for(var ci=0;ci<S.cfg.cmds.length;ci++){var c=S.cfg.cmds[ci];if(c.w&&lc.indexOf(c.w)!==-1)return runCmd(c);}
+  for(var li2=0;li2<LOCAL_COMMANDS.length;li2++){var lcmd=LOCAL_COMMANDS[li2],mm=(typeof lcmd.test==="function")?lcmd.test(lc):lc.match(lcmd.test);if(mm&&lcmd.run(t,lc,mm)!==false)return;}
   if(/update/.test(lc))return runUpdate({speak:true,log:true});
   if(/lagebericht/.test(lc))return doReport();
-  if(/wie\s?viel uhr|wie sp(ä|ae)t|uhrzeit/.test(lc))return say("Es ist "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr, "+N+".");
-  if(/welcher tag|welches datum|der wievielte/.test(lc))return say("Heute ist "+new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+", "+N+".");
 
   var tmr=parseTimer(lc);
   if(tmr){
@@ -938,9 +1040,14 @@ async function handle(raw){
   }
   if((m=lc.match(/(?:notiz|schreib auf)\s*[:]?\s*(.+)$/))){S.notes.push(cap(m[1]));save();render();return say("Notiz gespeichert.");}
   /* Eintrags-Wünsche, die nicht verstanden wurden, gehen NICHT ans Internet (sonst behauptet Gemini fälschlich, es sei eingetragen) */
-  if(/\b(eintragen|eintrag|trag|trage|füge|fuege|hinzufügen|hinzu|speicher\w*|notier\w*|lösch\w*|entfern\w*|abhaken)\b|\b(to[\s-]?do|monatsplan|wochenplan|aufgabenliste)\b/.test(lc))
+  if(GUARD_ACTIONS&&/\b(eintragen|eintrag|trag|trage|füge|fuege|hinzufügen|hinzu|speicher\w*|notier\w*|lösch\w*|entfern\w*|abhaken)\b|\b(to[\s-]?do|monatsplan|wochenplan|aufgabenliste)\b/.test(lc))
     return say("Das habe ich nicht verstanden, "+N+". Sag zum Beispiel: Trage Milch in die To-Do-Liste ein. Oder: Trage Zahnarzt am 3. Dezember um 14 Uhr in den Monatsplan ein.");
-  return askChat(t);
+  return "GEMINI"; /* nichts Lokales gegriffen → offene Frage → Gemini */
+}
+/* ===== Eingabeverarbeitung: erst lokale Weiche, nur dann Gemini ===== */
+async function handle(raw){
+  var r=await localRouter(raw);
+  if(r==="GEMINI")return askChat(raw.trim());
 }
 $("f").onsubmit=function(ev){ev.preventDefault();ensureAC();unlockAudio();var v=$("inp").value.trim();if(!v)return;$("inp").value="";handle(v);};
 
@@ -1038,6 +1145,13 @@ $("gear").onclick=function(){
   var tb=mk("button","Ton testen","sec");tb.type="button";
   tb.onclick=function(){ensureAC();unlockAudio();if(S.cfg.speak!==false)say("Hallo "+S.cfg.name+", hörst du mich?",{nolog:true});else log("Die Sprachausgabe ist aus.","ai");};
   sp.appendChild(tb);fl.appendChild(sp);
+  var sm=mk("div",null,"row"),mlb=mk("label",null),mcb=mk("input");
+  mcb.type="checkbox";mcb.checked=S.cfg.stopmic!==false;
+  mcb.style.cssText="flex:0 0 auto;width:20px;height:20px;margin-right:8px";
+  mlb.style.cssText="color:var(--text);font-size:16px;display:flex;align-items:center;padding:4px 0";
+  mcb.onchange=function(){S.cfg.stopmic=mcb.checked;save();};
+  mlb.appendChild(mcb);mlb.appendChild(document.createTextNode("Mit „Stopp“ unterbrechen (Mikrofon bleibt an, während Jarvis spricht)"));
+  sm.appendChild(mlb);fl.appendChild(sm);
   FL.forEach(function(f){
     var r=mk("div",null,"row"),l=mk("label",f[1]),i;
     if(f[2]==="voice"){
